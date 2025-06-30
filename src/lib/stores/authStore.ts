@@ -17,7 +17,7 @@ export const userProfile = writable<{
 export async function fetchUserProfile(userId: string) {
 	console.log('DEBUG: Fetching user profile for ID:', userId);
 	const { data: userProfileData, error: profileError } = await supabase
-		.from('user_profiles')
+		.from('profiles')
 		.select('*')
 		.eq('id', userId)
 		.single(); // Mengambil satu baris saja

@@ -239,9 +239,17 @@
 	onMount(() => {
 		// Cek sesi awal
 		supabase.auth.getSession().then(({ data }) => {
+			console.log('DEBUG: Initial session check. Session:', data.session);
 			session.set(data.session);
+
+			// <-- KODE PERBAIKAN: Panggil fetchUserProfile setelah sesi didapatkan -->
+			if (data.session?.user) {
+				console.log('Session found. Fetching user profile...');
+				fetchUserProfile(data.session.user.id);
+			}
+			// <-- KODE PERBAIKAN: Logic redirect jika tidak ada sesi -->
 			if (!data.session && $page.url.pathname !== '/login') {
-				console.log('No session found on initial load. Redirecting to /login...');
+				console.log('No session found. Redirecting to /login...');
 				goto('/login');
 			}
 		});
@@ -252,13 +260,13 @@
 			session.set(newSession);
 
 			if (event === 'SIGNED_IN') {
-				console.log('User signed in. Redirecting to profile page...');
+				console.log('User signed in. Redirecting...');
 				if (newSession.user) {
 					fetchProjects();
 					fetchUserProfile(newSession.user.id);
 				}
 				if ($page.url.pathname === '/login') {
-					goto('/profile');
+					goto('/');
 				}
 			} else if (event === 'SIGNED_OUT') {
 				console.log('User signed out. Redirecting to login...');
@@ -272,7 +280,6 @@
 		});
 
 		// --- Real-time listeners untuk projects, columns, dan tasks ---
-		// Listener ini sekarang hanya memicu fetch untuk project yang relevan
 		const projectsChannel = supabase.channel('public:projects');
 		projectsChannel
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () =>
@@ -283,7 +290,7 @@
 		const columnsChannel = supabase.channel('public:columns');
 		columnsChannel
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'columns' }, (payload) => {
-				// Trigger fetch hanya jika perubahan terjadi di project yang sedang dipilih
+				// @ts-ignore
 				if (payload.new.project_id === $selectedProjectId) {
 					fetchAllTasksAndColumns($selectedProjectId);
 				}
@@ -293,7 +300,7 @@
 		const tasksChannel = supabase.channel('public:tasks');
 		tasksChannel
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-				// Trigger fetch hanya jika perubahan terjadi di project yang sedang dipilih
+				// @ts-ignore
 				if (payload.new.project_id === $selectedProjectId) {
 					fetchAllTasksAndColumns($selectedProjectId);
 				}
@@ -301,10 +308,8 @@
 			.subscribe();
 
 		// --- Muat data awal saat onMount ---
-		fetchProjects();
-		if (get(session)?.user) {
-			fetchUserProfile(get(session).user.id);
-		}
+		fetchProjects(); // Ini akan memuat proyek bahkan saat sesi belum terdeteksi, akan diperbaiki oleh logic di fetchProjects()
+		// Kode `fetchUserProfile` yang lama di sini sudah tidak diperlukan karena sudah dipindahkan ke atas.
 
 		return () => {
 			authListener.subscription.unsubscribe();
