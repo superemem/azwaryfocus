@@ -3,7 +3,7 @@
 	import { supabase } from '$lib/supabase';
 	import { onMount, getContext, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
-	import { session, userProfile } from '$lib/stores/authStore';
+	import { session, userProfile, fetchUserProfile } from '$lib/stores/authStore';
 	import { selectedProjectId } from '$lib/stores/projectStore';
 	import { allTasks, allColumns } from '$lib/stores/kanbanDataStore';
 	import Sidebar from '$lib/components/Sidebar.svelte';
@@ -54,24 +54,6 @@
 		} else {
 			todayPlansCount = 0;
 			uncompletedTasksCount = 0;
-		}
-	}
-
-	// --- FUNGSI UNTUK MENGAMBIL DATA PROFIL USER ---
-	async function fetchUserProfile(userId: string) {
-		console.log('DEBUG: Fetching user profile for ID:', userId);
-		const { data: userProfileData, error: profileError } = await supabase
-			.from('profiles') // <--- BARIS PERBAIKAN: Ubah nama tabel dari 'user_profiles' ke 'profiles'
-			.select('*')
-			.eq('id', userId)
-			.single();
-
-		if (profileError) {
-			console.error('DEBUG: Error fetching user profile:', profileError);
-			userProfile.set(null);
-		} else {
-			console.log('DEBUG: User profile fetched:', userProfileData);
-			userProfile.set(userProfileData);
 		}
 	}
 
@@ -258,6 +240,10 @@
 		// Cek sesi awal
 		supabase.auth.getSession().then(({ data }) => {
 			session.set(data.session);
+			if (!data.session && $page.url.pathname !== '/login') {
+				console.log('No session found on initial load. Redirecting to /login...');
+				goto('/login');
+			}
 		});
 
 		// Set up real-time listener for auth changes
