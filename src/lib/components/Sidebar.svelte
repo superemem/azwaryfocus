@@ -7,9 +7,11 @@
 	import { userProfile, session } from '$lib/stores/authStore';
 
 	// Props dari +layout.svelte
-	// PERBAIKAN: Beri default null dan tipe bisa null
 	export let userName: string | null = null;
 	export let userAvatar: string | null = null;
+	// --- START: TERIMA PROP UNTUK MOBILE SIDBAR ---
+	export let isSidebarOpen: boolean; // Terima state isSidebarOpen
+	// --- END: TERIMA PROP UNTUK MOBILE SIDBAR ---
 
 	let isModalOpen = false;
 	let isTasksDropdownOpen = false; // <-- State untuk dropdown Tugas
@@ -37,16 +39,34 @@
 	// --- Fungsi untuk navigasi ke halaman profile ---
 	async function navigateToProfile() {
 		await goto('/profile');
+		// --- START: TUTUP SIDBAR SETELAH NAVIGASI DI MOBILE ---
+		if (window.innerWidth < 768) {
+			// Contoh untuk breakpoint md (768px)
+			isSidebarOpen = false;
+		}
+		// --- END: TUTUP SIDBAR SETELAH NAVIGASI DI MOBILE ---
 	}
 
 	// --- Fungsi untuk navigasi ke halaman proyek ---
 	async function navigateToProjects() {
 		await goto('/projects');
+		// --- START: TUTUP SIDBAR SETELAH NAVIGASI DI MOBILE ---
+		if (window.innerWidth < 768) {
+			// Contoh untuk breakpoint md (768px)
+			isSidebarOpen = false;
+		}
+		// --- END: TUTUP SIDBAR SETELAH NAVIGASI DI MOBILE ---
 	}
 
 	// --- Fungsi untuk navigasi ke halaman tugas dengan status tertentu ---
 	async function navigateToTaskStatus(status: 'to-do' | 'in-progress' | 'done') {
 		await goto(`/tasks/${status}`);
+		// --- START: TUTUP SIDBAR SETELAH NAVIGASI DI MOBILE ---
+		if (window.innerWidth < 768) {
+			// Contoh untuk breakpoint md (768px)
+			isSidebarOpen = false;
+		}
+		// --- END: TUTUP SIDBAR SETELAH NAVIGASI DI MOBILE ---
 	}
 
 	// --- Fungsi untuk toggle dropdown Tasks ---
@@ -55,7 +75,12 @@
 	}
 </script>
 
-<aside class="w-72 bg-gray-900 text-white flex flex-col p-6 shadow-2xl">
+<aside
+	class="fixed inset-y-0 left-0 z-40 w-72 bg-gray-900 text-white flex flex-col p-6 shadow-2xl
+           transform -translate-x-full transition-transform duration-300 ease-in-out
+           md:relative md:translate-x-0 md:w-72"
+	class:translate-x-0={isSidebarOpen}
+>
 	<div class="flex flex-col items-center mb-8 text-center">
 		<button on:click={navigateToProfile}>
 			{#if userAvatar}
@@ -77,7 +102,9 @@
 			{/if}
 		</button>
 		<p class="mt-3 text-lg font-semibold text-gray-100">{userName || 'Guest'}</p>
-		<p class="text-xs text-gray-400">{$session?.user?.email || 'Email tidak tersedia'}</p>
+		<p class="text-xs text-gray-400 max-w-full truncate">
+			{$session?.user?.email || 'Email tidak tersedia'}
+		</p>
 	</div>
 
 	<nav class="flex-1 space-y-4">

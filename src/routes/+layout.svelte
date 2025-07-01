@@ -16,6 +16,9 @@
 	let loading = true;
 	let isEditProfileModalOpen = false;
 	let isAddProjectModalOpen = false;
+	// --- START: TAMBAHAN UNTUK MOBILE SIDBAR ---
+	let isSidebarOpen = false; // State untuk mengontrol sidebar mobile
+	// --- END: TAMBAHAN UNTUK MOBILE SIDBAR ---
 
 	// --- State untuk header Dashboard ---
 	let todayDate = '';
@@ -167,6 +170,7 @@
 	// --- Fungsi untuk meng-handle update profil dari modal ---
 	async function handleProfileUpdate(event: CustomEvent) {
 		const { newUsername, avatarFile } = event.detail;
+		console.log('RECEIVED avatarFile:', avatarFile);
 
 		if (!$session?.user) {
 			console.error('Tidak ada sesi pengguna untuk memperbarui profil.');
@@ -178,9 +182,16 @@
 		// 1. Upload avatar baru jika ada file yang dipilih
 		if (avatarFile) {
 			const userId = $session.user.id;
-			const filePath = `${userId}/${Date.now()}-${avatarFile.name}`;
+			console.log('DEBUG: User ID for avatar upload:', userId);
+
+			const fileExt = avatarFile.name.split('.').pop();
+			const fileName = `${Date.now()}.${fileExt}`;
+			const filePath = `${userId}/${fileName}`;
+			console.log('DEBUG: Uploading to:', filePath);
+
+			// --- PERBAIKAN: Gunakan 'profpicts' sesuai dengan bucket baru ---
 			const { data: uploadData, error: uploadError } = await supabase.storage
-				.from('avatars')
+				.from('profpicts') // Pastikan ini 'profpicts'
 				.upload(filePath, avatarFile, {
 					cacheControl: '3600',
 					upsert: true
@@ -192,7 +203,7 @@
 			}
 
 			const { data: publicUrlData } = supabase.storage
-				.from('avatars')
+				.from('profpicts') // Pastikan ini 'profpicts'
 				.getPublicUrl(uploadData.path);
 			avatarUrl = publicUrlData.publicUrl;
 		}
@@ -200,8 +211,7 @@
 		// 2. Update data profil di tabel 'profiles'
 		const updates = {
 			username: newUsername,
-			avatar_url: avatarUrl,
-			updated_at: new Date().toISOString()
+			avatar_url: avatarUrl
 		};
 		const { error: updateError } = await supabase
 			.from('profiles')
@@ -266,7 +276,7 @@
 					fetchUserProfile(newSession.user.id);
 				}
 				if ($page.url.pathname === '/login') {
-					goto('/');
+					goto('/profile');
 				}
 			} else if (event === 'SIGNED_OUT') {
 				console.log('User signed out. Redirecting to login...');
@@ -331,13 +341,43 @@
 
 <div class="flex h-screen overflow-hidden">
 	{#if $session && $page.url.pathname !== '/login'}
+		<div
+			class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden transition-opacity duration-300"
+			class:opacity-100={isSidebarOpen}
+			class:opacity-0={!isSidebarOpen}
+			class:pointer-events-none={!isSidebarOpen}
+			on:click={() => (isSidebarOpen = false)}
+		></div>
+
+		<button
+			class="fixed top-4 left-4 z-50 p-2 rounded-md bg-gray-800 text-white md:hidden"
+			on:click={() => (isSidebarOpen = !isSidebarOpen)}
+		>
+			<svg
+				class="w-6 h-6"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+				xmlns="http://www.w3.org/2000/svg"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M4 6h16M4 12h16M4 18h16"
+				></path>
+			</svg>
+		</button>
+
 		<Sidebar
 			{projects}
 			userName={$userProfile?.username || 'Guest'}
 			userAvatar={$userProfile?.avatar_url || null}
 			on:refreshProjects={fetchProjects}
 			on:openAddProjectModal={openAddProjectModal}
+			bind:isSidebarOpen
 		/>
+
 		<main class="flex-1 p-8 overflow-y-auto bg-gray-100">
 			{#if $page.url.pathname === '/'}
 				<div

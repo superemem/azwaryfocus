@@ -153,26 +153,26 @@
 		<p class="text-red-600">{error}</p>
 	{:else if $userProfile}
 		<div class="bg-white p-6 rounded-lg shadow-md mb-8">
-			<div class="flex items-center space-x-6">
+			<div class="flex flex-col items-center text-center">
 				{#if $userProfile.avatar_url}
 					<img
 						src={$userProfile.avatar_url}
 						alt="Avatar"
-						class="w-24 h-24 rounded-full object-cover border-4 border-gray-200"
+						class="w-24 h-24 rounded-full object-cover border-4 border-gray-200 mx-auto"
 					/>
 				{:else}
 					<div
-						class="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center text-5xl font-bold text-gray-500"
+						class="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center text-5xl font-bold text-gray-500 mx-auto"
 					>
 						{($userProfile.username?.charAt(0) || 'G').toUpperCase()}
 					</div>
 				{/if}
 				<div>
-					<h2 class="text-3xl font-semibold text-gray-900">
+					<h2 class="text-3xl font-semibold text-gray-900 mt-4">
 						{$userProfile.username || 'Pengguna'}
 					</h2>
-					<p class="text-gray-600 mt-1">{$session?.user?.email || 'Email tidak tersedia'}</p>
-					<p class="text-gray-500 mt-2">Kontak: -</p>
+					<p class="text-gray-600">{$session?.user?.email || 'Email tidak tersedia'}</p>
+					<p class="text-gray-500 mt-1">Kontak: -</p>
 				</div>
 			</div>
 		</div>
