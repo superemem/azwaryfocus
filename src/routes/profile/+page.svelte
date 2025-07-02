@@ -22,7 +22,7 @@
 	let error: string | null = null;
 	let tasksChannel: RealtimeChannel | null = null;
 
-	// --- Fungsi untuk menghitung statistik bulanan ---
+	// --- Fungsi untuk menghitung statistik bulanan (FIXED) ---
 	function calculateMonthlyStats(tasks: AllTasks[]) {
 		const today = new Date();
 		const currentMonth = today.getMonth();
@@ -36,18 +36,23 @@
 			if (task.created_at) {
 				const taskDate = new Date(task.created_at);
 				if (taskDate.getMonth() === currentMonth && taskDate.getFullYear() === currentYear) {
-					const column_name = task.column_name?.toLowerCase();
+					console.log('[DEBUG] Task masuk bulan ini:', task);
 
-					if (column_name === 'to do') {
+					// FIXED: Sesuaikan dengan nama kolom yang konsisten
+					const columnName = task.columns?.name;
+
+					if (columnName === 'To Do') {
 						toDoCount++;
-					} else if (column_name === 'in progress') {
+					} else if (columnName === 'In Progress') {
 						inProgressCount++;
-					} else if (column_name === 'done') {
+					} else if (columnName === 'Done') {
 						doneCount++;
 					}
 				}
 			}
 		});
+
+		console.log('[DEBUG] Final stats:', { toDoCount, inProgressCount, doneCount });
 
 		monthlyStats = {
 			toDo: toDoCount,
@@ -86,36 +91,65 @@
 		loadingProjectsStats = false;
 	}
 
-	// --- Ambil semua task dan hitung statistiknya ---
+	$: if ($session?.user?.id) {
+		console.log('[DEBUG] Reactive session update, fetching stats...');
+		fetchAndCalculateStats();
+		fetchProjectStats();
+	}
+
+	// --- Ambil semua task dan hitung statistiknya (FIXED) ---
 	async function fetchAndCalculateStats() {
+		if (!$session?.user) return;
+
 		loading = true;
-		error = null;
-		if (!$session || !$session.user) {
+
+		const userId = $session.user.id;
+
+		try {
+			// Fetch profile
+			const { data: profileData, error: profileError } = await supabase
+				.from('profiles')
+				.select('*')
+				.eq('id', userId)
+				.single();
+
+			// Fetch stats
+			const { data: taskData, error: taskError } = await supabase
+				.from('tasks')
+				.select('*, columns(name)')
+				.eq('created_by', userId);
+
+			console.log('[DEBUG] Supabase result:', { tasks: taskData, fetchError: taskError });
+
+			if (taskError) {
+				console.error('Error fetching tasks:', taskError);
+				error = taskError.message;
+				return;
+			}
+
+			// Hitung statistik
+			if (taskData) {
+				calculateMonthlyStats(taskData);
+			} else {
+				monthlyStats = { toDo: 0, inProgress: 0, done: 0 };
+			}
+		} catch (err) {
+			console.error('Exception in fetchAndCalculateStats:', err);
+			error = 'Terjadi kesalahan saat mengambil data';
+		} finally {
 			loading = false;
-			return;
 		}
-
-		const { data: tasks, error: fetchError } = await supabase
-			.from('tasks')
-			.select('*, columns(name)')
-			.eq('created_by', $session.user.id)
-			.order('created_at', { ascending: false });
-
-		if (fetchError) {
-			console.error('Error fetching tasks for profile:', fetchError);
-			error = 'Gagal mengambil data tugas.';
-			loading = false;
-			return;
-		}
-
-		allTasks.set(tasks.map((t) => ({ ...t, column_name: t.columns?.name })));
-		calculateMonthlyStats($allTasks);
-		loading = false;
 	}
 
 	onMount(() => {
-		fetchAndCalculateStats();
-		fetchProjectStats(); // <-- Panggil fungsi baru
+		const interval = setInterval(() => {
+			if ($session?.user?.id) {
+				clearInterval(interval);
+				console.log('[DEBUG] Memulai fetch stats');
+				fetchAndCalculateStats();
+				fetchProjectStats();
+			}
+		}, 100); // <-- Panggil fungsi baru
 
 		tasksChannel = supabase.channel('public:tasks');
 		tasksChannel
@@ -140,8 +174,6 @@
 			supabase.removeChannel(tasksChannel);
 		}
 	});
-
-	$: calculateMonthlyStats($allTasks);
 </script>
 
 <div class="p-8">

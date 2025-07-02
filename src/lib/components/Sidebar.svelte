@@ -153,6 +153,76 @@
 			>
 			Proyek
 		</button>
+		<div class="space-y-2">
+			<button
+				on:click={toggleTasksDropdown}
+				class="w-full flex items-center justify-between p-3 rounded-xl font-semibold transition-all duration-200 text-gray-300 hover:bg-gray-800"
+			>
+				<span class="flex items-center">
+					<svg
+						class="w-6 h-6 mr-3"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+						xmlns="http://www.w3.org/2000/svg"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M3 7h18M3 12h18M3 17h18"
+						/>
+					</svg>
+					Tugas
+				</span>
+				<svg
+					class="w-4 h-4 transform transition-transform duration-200"
+					class:rotate-90={isTasksDropdownOpen}
+					fill="none"
+					stroke="currentColor"
+					viewBox="0 0 24 24"
+					xmlns="http://www.w3.org/2000/svg"
+				>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+				</svg>
+			</button>
+
+			{#if isTasksDropdownOpen}
+				<div class="ml-6 space-y-2">
+					<a
+						on:click={() => navigateToTaskStatus('to-do')}
+						class="block px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 transition"
+						class:bg-purple-700={$page.url.pathname === '/tasks/to-do'}
+					>
+						• To Do
+					</a>
+					<a
+						on:click={() => navigateToTaskStatus('in-progress')}
+						class="block px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 transition"
+						class:bg-purple-700={$page.url.pathname === '/tasks/in-progress'}
+					>
+						• In Progress
+					</a>
+					<a
+						on:click={() => navigateToTaskStatus('done')}
+						class="block px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-700 transition"
+						class:bg-purple-700={$page.url.pathname === '/tasks/done'}
+					>
+						• Done
+					</a>
+				</div>
+			{/if}
+		</div>
+
+		{#if $userProfile?.role === 'supervisor'}
+			<a
+				href="/team"
+				class="block px-4 py-2 rounded-lg ? 'bg-purple-600 text-white shadow-lg'
+				: 'text-gray-300 hover:bg-gray-800 transition-colors font-medium"
+				class:bg-gray-300={$page.url.pathname === '/team'}
+				>🤝🏼 Tim Saya
+			</a>
+		{/if}
 
 		<a
 			href="/tools/pomodoro"

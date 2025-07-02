@@ -38,6 +38,7 @@
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.50.2",
+		"dayjs": "^1.11.13",
 		"svelte-dnd-action": "^0.9.63"
 	}
 }
