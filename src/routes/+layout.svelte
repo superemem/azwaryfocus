@@ -190,7 +190,7 @@
 
 			// --- PERBAIKAN: Gunakan 'profpicts' sesuai dengan bucket baru ---
 			const { data: uploadData, error: uploadError } = await supabase.storage
-				.from('profpicts') // Pastikan ini 'profpicts'
+				.from('avatars') // Pastikan ini 'profpicts'
 				.upload(filePath, avatarFile, {
 					cacheControl: '3600',
 					upsert: true
@@ -202,7 +202,7 @@
 			}
 
 			const { data: publicUrlData } = supabase.storage
-				.from('profpicts') // Pastikan ini 'profpicts'
+				.from('avatars') // Pastikan ini 'profpicts'
 				.getPublicUrl(uploadData.path);
 			avatarUrl = publicUrlData.publicUrl;
 		}
