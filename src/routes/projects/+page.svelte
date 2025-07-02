@@ -17,20 +17,25 @@
 		if (!$session?.user) {
 			projects = [];
 			loading = false;
-			// Penting: Arahkan pengguna ke login jika belum ada sesi
 			goto('/login');
 			return;
 		}
 
-		const userId = $session.user.id;
-
-		// PERBAIKAN: Query yang lebih sederhana dan benar
-		// Asumsi: Kita hanya mengambil proyek yang dibuat oleh user yang sedang login
 		const { data, error: fetchError } = await supabase
 			.from('projects')
-			.select('*')
+			.select(
+				`
+				id,
+				name,
+				description,
+				created_at,
+				created_by,
+				creator:profiles!projects_created_by_fkey (
+					username
+				)
+			`
+			)
 			.eq('status', 'active')
-			.eq('created_by', userId) // Cukup gunakan .eq() untuk filter ini
 			.order('created_at', { ascending: false });
 
 		if (fetchError) {
@@ -44,20 +49,16 @@
 		loading = false;
 	}
 
-	// --- Fungsi untuk memilih proyek dan pindah ke Kanban board ---
 	function selectProject(projectId: string) {
-		selectedProjectId.set(projectId); // Atur ID proyek yang dipilih di store
-		goto('/'); // Arahkan ke halaman Kanban Board
+		selectedProjectId.set(projectId);
+		goto('/');
 	}
 
-	// --- Muat data saat komponen dimuat atau sesi berubah ---
 	onMount(() => {
 		fetchProjects();
 	});
 
-	// Reactive statement untuk memuat ulang data saat sesi berubah
 	$: if ($session?.user) {
-		// Cek jika session berubah, muat ulang data
 		fetchProjects();
 	}
 
@@ -83,7 +84,8 @@
 					<h2 class="text-2xl font-bold text-gray-800 mb-2">{project.name}</h2>
 					<p class="text-gray-600 text-sm mb-4">{project.description || 'Tidak ada deskripsi.'}</p>
 					<div class="text-xs text-gray-500">
-						Dibuat pada: {new Date(project.created_at).toLocaleDateString()}
+						Dibuat oleh: {project.creator?.username || 'Tidak diketahui'} <br />
+						Pada: {new Date(project.created_at).toLocaleDateString()}
 					</div>
 				</div>
 			{/each}

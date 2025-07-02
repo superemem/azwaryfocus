@@ -81,8 +81,7 @@
 		const { data: projectsData, error: projectsError } = await supabase
 			.from('projects')
 			.select('id, name, created_at, description, created_by, status')
-			.eq('status', 'active') // BARIS PERBAIKAN: Hanya ambil proyek yang aktif
-			.or(`created_by.eq.${userId}`)
+			.eq('status', 'active') // ini masih boleh
 			.order('created_at', { ascending: false });
 
 		if (projectsError) {
