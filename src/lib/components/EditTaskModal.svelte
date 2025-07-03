@@ -1,29 +1,56 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import { session, userProfile } from '$lib/stores/authStore'; // <-- IMPORT userProfile di sini juga
 
 	export let isOpen: boolean;
 	export let task: any = null;
-	export let allProfiles: any[] = [];
+	export let allProfiles: any[] = []; // Ini adalah semua profil yang di-fetch dari parent
 
-	let localTitle: string = '';
-	let localDescription: string = '';
+	let localTitle = '';
+	let localDescription = '';
 	let localAssignedTo: string | null = null;
-	// --- BARIS BARU: VARIABLE UNTUK KOLOM BARU ---
-	let localPriority: string | null = null;
+	let localPriority = 'Low';
 	let localDueDate: string | null = null;
-	// ---------------------------------------------
 
 	const dispatch = createEventDispatcher();
 
-	// Reaktif statement untuk mengisi form saat 'task' berubah
-	$: if (task) {
+	// Ambil user ID dari session
+	$: currentUserId = $session?.user?.id;
+	// Ambil role dari userProfile (ini yang benar)
+	$: currentUserRole = $userProfile?.role || 'staff'; // Default ke 'staff' jika belum terload/null
+
+	// Filter allProfiles untuk mendapatkan daftar user yang bisa di-assign oleh supervisor
+	// Jika ada Supervisor, dia bisa assign ke dirinya sendiri atau ke semua staff.
+	// Jika staff, daftar ini tidak akan digunakan untuk select.
+	$: assignableUsers = allProfiles.filter(
+		(profile) => profile.id !== currentUserId || currentUserRole === 'supervisor'
+	);
+
+	// Load data awal dari task. Gunakan currentUserId untuk staff default assigned_to.
+	$: if (task && currentUserId) {
+		// Pastikan currentUserId sudah tersedia
 		localTitle = task.title;
 		localDescription = task.description || '';
-		localAssignedTo = task.assigned_to;
-		// --- BARIS BARU: SET NILAI KOLOM BARU ---
-		localPriority = task.priority || 'Low'; // Set default 'Low'
+
+		// Jika task belum di-assign atau di-assign ke user yang tidak lagi ada, default ke user saat ini
+		// Jika user adalah staff, secara otomatis assigned_to dirinya sendiri
+		if (currentUserRole === 'staff') {
+			localAssignedTo = currentUserId;
+		} else {
+			// Supervisor
+			// Jika task sudah ada assigned_to, gunakan itu. Jika tidak, default ke null (unassigned)
+			// Atau jika supervisor ingin meng-assign ke dirinya sendiri, bisa juga
+			localAssignedTo = task.assigned_to || null; // Biarkan null jika belum di-assign
+		}
+		localPriority = task.priority || 'Low';
 		localDueDate = task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : null;
-		// ---------------------------------------
+	} else if (!task) {
+		// Reset form saat task null (misal, saat modal ditutup atau dibuka untuk task baru)
+		localTitle = '';
+		localDescription = '';
+		localAssignedTo = currentUserId; // Default ke diri sendiri
+		localPriority = 'Low';
+		localDueDate = null;
 	}
 
 	function handleSave() {
@@ -31,16 +58,27 @@
 			alert('Judul task tidak boleh kosong!');
 			return;
 		}
-		// --- BARIS BARU: DISPATCH NILAI KOLOM BARU ---
+
+		let finalAssignedTo = localAssignedTo;
+
+		// Logika untuk Staff: selalu tugaskan ke dirinya sendiri
+		if (currentUserRole === 'staff') {
+			finalAssignedTo = currentUserId;
+		}
+		// Logika untuk Supervisor: sudah ditangani oleh select,
+		// localAssignedTo sudah bisa null jika dipilih "Unassigned"
+
+		console.log('DEBUG (EditTaskModal): Saving task with assigned_to:', finalAssignedTo);
+
 		dispatch('submit', {
-			id: task.id,
+			id: task.id, // ID task yang diedit
 			title: localTitle,
 			description: localDescription,
-			assigned_to: localAssignedTo,
+			assigned_to: finalAssignedTo, // Gunakan finalAssignedTo
 			priority: localPriority,
 			due_date: localDueDate
 		});
-		// -------------------------------------------
+
 		closeModal();
 	}
 
@@ -64,12 +102,16 @@
 				<textarea id="description" rows="4" bind:value={localDescription}></textarea>
 
 				<label for="assignedTo">Tugaskan kepada:</label>
-				<select id="assignedTo" bind:value={localAssignedTo}>
-					<option value={null}>Unassigned</option>
-					{#each allProfiles as profile (profile.id)}
-						<option value={profile.id}>{profile.username}</option>
-					{/each}
-				</select>
+				{#if currentUserRole === 'supervisor'}
+					<select id="assignedTo" bind:value={localAssignedTo}>
+						<option value={null}>Unassigned</option>
+						{#each allProfiles as profile (profile.id)}
+							<option value={profile.id}>{profile.username}</option>
+						{/each}
+					</select>
+				{:else}
+					<p><strong>{$userProfile?.username || 'Kamu sendiri'}</strong></p>
+				{/if}
 
 				<label for="priority">Prioritas:</label>
 				<select id="priority" bind:value={localPriority}>
@@ -80,6 +122,7 @@
 
 				<label for="dueDate">Tanggal Tenggat:</label>
 				<input id="dueDate" type="date" bind:value={localDueDate} />
+
 				<div class="assignee-info">
 					<p>Dibuat oleh: <strong>{task.created_by_profile?.username || 'Unknown'}</strong></p>
 				</div>
@@ -93,6 +136,7 @@
 {/if}
 
 <style>
+	/* Styles are the same as before */
 	.modal-backdrop {
 		position: fixed;
 		top: 0;

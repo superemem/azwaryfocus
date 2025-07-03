@@ -1,33 +1,66 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, onMount } from 'svelte';
+	import { supabase } from '$lib/supabase';
+	import { session } from '$lib/stores/authStore';
 
-	// Dispatcher untuk mengirim event dari modal ke komponen induk
 	const dispatch = createEventDispatcher();
 
-	// Variable untuk menyimpan input dari form
-	let title: string = '';
-	let description: string = '';
+	let title = '';
+	let description = '';
+	let dueDate = '';
+	let assignedTo = '';
+	let userRole = 'staff';
+	let userId = '';
+	let users: any[] = [];
 
-	// Props yang diterima dari komponen induk
-	export let isOpen: boolean;
+	export let isOpen = false;
 
-	// Fungsi untuk menutup modal
+	// Dapatkan session info
+	$: userRole = $session?.user?.role || 'staff';
+	$: userId = $session?.user?.id || '';
+
+	// Ambil semua user untuk opsi assign (hanya untuk supervisor)
+	onMount(async () => {
+		if (userRole === 'supervisor') {
+			const { data, error } = await supabase.from('profiles').select('id, username');
+
+			if (!error && data) {
+				users = data;
+			}
+		}
+	});
+
 	function closeModal() {
 		dispatch('close');
 	}
 
-	// Fungsi untuk menangani submit form
 	function handleSubmit() {
-		// Cek apakah judul sudah diisi
-		if (title.trim()) {
-			// Kirim event 'submit' beserta data tugas baru
-			dispatch('submit', { title, description });
-			// Reset form setelah submit
-			title = '';
-			description = '';
+		if (!title.trim()) {
+			alert('Judul tidak boleh kosong!');
+			return;
 		}
-		// Tutup modal setelah submit
+
+		const taskData = {
+			title,
+			description,
+			due_date: dueDate || null,
+			assigned_to: userRole === 'supervisor' ? assignedTo : userId
+		};
+
+		dispatch('submit', taskData);
+
+		title = '';
+		description = '';
+		dueDate = '';
+		assignedTo = '';
 		closeModal();
+	}
+
+	$: if (!isOpen) {
+		title = '';
+		description = '';
+		dueDate = '';
+		assignedTo = '';
 	}
 </script>
 
@@ -40,10 +73,31 @@
 					<label for="title">Judul Tugas</label>
 					<input id="title" type="text" bind:value={title} required />
 				</div>
+
 				<div class="form-group">
 					<label for="description">Deskripsi</label>
 					<textarea id="description" bind:value={description}></textarea>
 				</div>
+
+				<div class="form-group">
+					<label>Tugaskan kepada:</label>
+					{#if userRole === 'supervisor'}
+						<select bind:value={assignedTo} required>
+							<option value="" disabled>Pilih user</option>
+							{#each users as user}
+								<option value={user.id}>{user.username}</option>
+							{/each}
+						</select>
+					{:else}
+						<p class="text-sm text-gray-700">Kamu sendiri</p>
+					{/if}
+				</div>
+
+				<div class="form-group">
+					<label for="dueDate">Tanggal Tenggat</label>
+					<input id="dueDate" type="date" bind:value={dueDate} />
+				</div>
+
 				<div class="modal-actions">
 					<button type="submit" class="submit-btn">Simpan</button>
 					<button type="button" on:click={closeModal} class="cancel-btn">Batal</button>
@@ -92,19 +146,14 @@
 		color: #555;
 	}
 	.form-group input,
-	.form-group textarea {
+	.form-group textarea,
+	.form-group select {
 		width: 100%;
 		padding: 12px;
 		border: 1px solid #ddd;
 		border-radius: 5px;
 		font-size: 16px;
 		box-sizing: border-box;
-		transition: border-color 0.2s;
-	}
-	.form-group input:focus,
-	.form-group textarea:focus {
-		outline: none;
-		border-color: #007bff;
 	}
 	.form-group textarea {
 		resize: vertical;
@@ -117,30 +166,30 @@
 		margin-top: 30px;
 	}
 	.modal-actions button {
-		padding: 12px 25px;
+		padding: 10px 20px;
 		border: none;
-		border-radius: 5px;
+		border-radius: 6px;
 		font-size: 16px;
-		font-weight: bold;
+		font-weight: 600;
 		cursor: pointer;
 		transition:
-			background-color 0.2s,
-			transform 0.1s;
+			background-color 0.2s ease,
+			transform 0.1s ease;
 	}
 	.submit-btn {
-		background-color: #28a745;
+		background-color: #22c55e;
 		color: white;
 	}
 	.submit-btn:hover {
-		background-color: #218838;
+		background-color: #16a34a;
 		transform: translateY(-1px);
 	}
 	.cancel-btn {
-		background-color: #f0f0f0;
-		color: #555;
+		background-color: #e5e7eb;
+		color: #374151;
 	}
 	.cancel-btn:hover {
-		background-color: #e0e0e0;
+		background-color: #d1d5db;
 		transform: translateY(-1px);
 	}
 </style>
