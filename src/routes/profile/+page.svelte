@@ -117,7 +117,7 @@
 			const { data: taskData, error: taskError } = await supabase
 				.from('tasks')
 				.select('*, columns(name)')
-				.eq('created_by', userId);
+				.eq('assigned_to', userId);
 
 			console.log('[DEBUG] Supabase result:', { tasks: taskData, fetchError: taskError });
 

@@ -16,7 +16,7 @@
 		if (error) {
 			alert(error.message);
 		} else {
-			goto('/'); // Redirect to dashboard after successful login
+			goto('/profile'); // Redirect to dashboard after successful login
 		}
 	}
 

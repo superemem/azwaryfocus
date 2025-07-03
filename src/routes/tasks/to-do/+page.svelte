@@ -10,7 +10,7 @@
 		const { data, error } = await supabase
 			.from('tasks')
 			.select('title, priority, due_date, columns(name)')
-			.eq('created_by', $session.user.id);
+			.eq('assigned_to', $session.user.id);
 
 		if (!error && data) {
 			tasks = data.filter((task) => task.columns?.name?.toLowerCase() === 'to do');
