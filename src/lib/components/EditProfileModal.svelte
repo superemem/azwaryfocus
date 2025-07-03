@@ -1,36 +1,35 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	// --- PERBAIKAN: Mengubah jalur import agar sesuai dengan struktur folder ---
 	import '../../app.css';
 
-	// Props: data yang diterima dari komponen parent
 	export let isOpen: boolean;
-	export let currentProfile: { id: string; username: string; avatar_url: string | null } | null =
-		null;
+	export let currentProfile: {
+		id: string;
+		username: string;
+		avatar_url: string | null;
+		job_title?: string;
+	} | null = null;
 
-	// State untuk form input
-	let newUsername: string = '';
+	let newUsername = '';
 	let avatarFile: File | null = null;
 	let avatarPreviewUrl: string | null = null;
+	let jobTitle = '';
 
-	// Dispatcher untuk mengirim event ke komponen parent
 	const dispatch = createEventDispatcher();
 
-	// Fungsi yang akan dijalankan saat modal dibuka atau prop berubah
 	$: if (isOpen && currentProfile) {
 		newUsername = currentProfile.username;
 		avatarPreviewUrl = currentProfile.avatar_url;
-		avatarFile = null; // Reset file saat modal dibuka
+		jobTitle = currentProfile.job_title || '';
+		avatarFile = null;
 	}
 
-	// Handle perubahan file input
 	function handleFileChange(event: Event) {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0] || null;
 		avatarFile = file;
 
 		if (file) {
-			// Buat URL preview sementara
 			const reader = new FileReader();
 			reader.onload = (e) => {
 				avatarPreviewUrl = e.target?.result as string;
@@ -42,14 +41,15 @@
 	}
 
 	function handleSubmit() {
-		// Cek username tidak kosong
 		if (newUsername.trim() === '') {
 			alert('Username tidak boleh kosong!');
 			return;
 		}
-
-		// Kirim event 'submit' dengan data username dan file
-		dispatch('submit', { newUsername, avatarFile });
+		dispatch('submit', {
+			newUsername,
+			avatarFile,
+			jobTitle
+		});
 		dispatch('close');
 	}
 
@@ -75,6 +75,7 @@
 								<div class="avatar-placeholder">?</div>
 							{/if}
 						</div>
+
 						<div class="form-group">
 							<label for="avatar">Foto Profil:</label>
 							<input id="avatar" type="file" accept="image/*" on:change={handleFileChange} />
@@ -82,13 +83,20 @@
 
 						<div class="form-group">
 							<label for="username">Username:</label>
-							<input
-								id="username"
-								type="text"
-								bind:value={newUsername}
-								placeholder="Masukkan username baru"
-							/>
+							<input id="username" type="text" bind:value={newUsername} />
 						</div>
+
+						<div class="form-group">
+							<label for="job_title">Jabatan:</label>
+							<select id="job_title" bind:value={jobTitle}>
+								<option value="">- Pilih Jabatan -</option>
+								<option value="Head Creative Marketing">Head Creative Marketing</option>
+								<option value="CRM">CRM</option>
+								<option value="Community and Partnership">Community and Partnership</option>
+								<option value="Content Production">Content Production</option>
+							</select>
+						</div>
+
 						<div class="modal-actions">
 							<button type="submit" class="save-btn">Simpan Perubahan</button>
 							<button type="button" class="cancel-btn" on:click={handleClose}>Batal</button>
@@ -251,5 +259,19 @@
 	.cancel-btn:hover {
 		background-color: #ccc;
 		transform: translateY(-1px);
+	}
+	.form-group select {
+		width: 100%;
+		padding: 12px;
+		border: 1px solid #ddd;
+		border-radius: 6px;
+		font-size: 1em;
+		box-sizing: border-box;
+		transition: border-color 0.2s;
+	}
+
+	.form-group select:focus {
+		outline: none;
+		border-color: #007bff;
 	}
 </style>

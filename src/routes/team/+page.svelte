@@ -1,19 +1,18 @@
 <script lang="ts">
 	import { supabase } from '$lib/supabase';
-	import { session } from '$lib/stores/authStore';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { session } from '$lib/stores/authStore';
 
 	let teamMembers = [];
 	let loading = true;
 	let error = '';
 
-	// Ambil ID kolom "Done" untuk filtering task
 	async function getDoneColumnId() {
 		const { data, error } = await supabase
 			.from('columns')
 			.select('id')
-			.ilike('name', 'done') // pencocokan tanpa case sensitive
+			.ilike('name', 'done')
 			.single();
 
 		if (error || !data) {
@@ -40,13 +39,11 @@
 
 			const enrichedMembers = await Promise.all(
 				profileData.map(async (member) => {
-					// Hitung proyek
 					const { count: projectCount } = await supabase
 						.from('projects')
 						.select('id', { count: 'exact' })
 						.eq('created_by', member.id);
 
-					// Hitung task selesai
 					let doneTaskCount = 0;
 					if (doneColumnId) {
 						const { count: taskCount } = await supabase
@@ -94,8 +91,9 @@
 					{/if}
 
 					<h2 class="text-lg font-semibold">{member.username || member.email}</h2>
-					<p class="text-sm text-gray-600">Role: {member.role}</p>
-
+					<p class="text-sm text-gray-600 italic">
+						Posisi: {member.job_title || 'Belum ada jabatan'}
+					</p>
 					<p class="text-sm mt-2">Jumlah Proyek: {member.projectCount}</p>
 					<p class="text-sm">Task Selesai: {member.doneTaskCount}</p>
 				</div>
