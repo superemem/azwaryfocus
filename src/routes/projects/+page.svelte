@@ -81,28 +81,47 @@
 					class="bg-white p-6 rounded-xl shadow-lg border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all cursor-pointer transform"
 					on:click={() => selectProject(project.id)}
 				>
-					<h2 class="text-2xl font-bold text-gray-800 mb-2">{project.name}</h2>
-					<p class="text-gray-600 text-sm mb-3">{project.description || 'Tidak ada deskripsi.'}</p>
+					<!-- Nama Proyek -->
+					<h2 class="text-2xl font-bold text-gray-800 mb-1">{project.name}</h2>
 
-					<!-- Badge Status -->
-					{#if project.status}
-						<span
-							class="inline-block text-xs px-3 py-1 rounded-full font-semibold mb-2"
-							class:bg-green-100={project.status === 'active'}
-							class:text-green-800={project.status === 'active'}
-							class:bg-yellow-100={project.status === 'on-hold'}
-							class:text-yellow-800={project.status === 'on-hold'}
-							class:bg-blue-100={project.status === 'completed'}
-							class:text-blue-800={project.status === 'completed'}
-							class:bg-gray-100={project.status === 'archived'}
-							class:text-gray-700={project.status === 'archived'}
-						>
-							{project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-						</span>
-					{/if}
+					<!-- Status Project & Role -->
+					<div class="flex items-center gap-2 mb-2">
+						{#if project.status}
+							<span
+								class="text-xs px-3 py-1 rounded-full font-semibold"
+								class:bg-green-100={project.status === 'active'}
+								class:text-green-800={project.status === 'active'}
+								class:bg-yellow-100={project.status === 'on-hold'}
+								class:text-yellow-800={project.status === 'on-hold'}
+								class:bg-blue-100={project.status === 'completed'}
+								class:text-blue-800={project.status === 'completed'}
+								class:bg-gray-100={project.status === 'archived'}
+								class:text-gray-700={project.status === 'archived'}
+							>
+								{project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+							</span>
+						{/if}
 
+						{#if project.created_by === $session.user.id}
+							<span
+								class="text-xs px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 font-semibold"
+								>Owner</span
+							>
+						{:else}
+							<span class="text-xs px-3 py-1 rounded-full bg-pink-100 text-pink-800 font-semibold"
+								>Invited</span
+							>
+						{/if}
+					</div>
+
+					<!-- Deskripsi -->
+					<p class="text-gray-600 text-sm mb-3">
+						{project.description || 'Tidak ada deskripsi.'}
+					</p>
+
+					<!-- Footer -->
 					<div class="text-xs text-gray-500 mt-2">
-						Dibuat oleh: {project.creator?.username || 'Tidak diketahui'} <br />
+						Dibuat oleh: {project.creator?.username || 'Tidak diketahui'}<br />
 						Pada: {new Date(project.created_at).toLocaleDateString()}
 					</div>
 				</div>
