@@ -318,6 +318,17 @@
 			<h2 class="text-3xl font-bold text-gray-800">
 				Project: {$selectedProject?.name || 'Loading...'}
 			</h2>
+			{#if $selectedProject?.status}
+				<span
+					class="inline-block px-3 py-1 text-xs font-semibold rounded-full
+      {$selectedProject.status === 'active' ? 'bg-green-100 text-green-800' : ''}
+      {$selectedProject.status === 'on-hold' ? 'bg-yellow-100 text-yellow-800' : ''}
+      {$selectedProject.status === 'completed' ? 'bg-blue-100 text-blue-800' : ''}
+      {$selectedProject.status === 'archived' ? 'bg-gray-200 text-gray-600' : ''}"
+				>
+					{$selectedProject.status.replace('-', ' ').toUpperCase()}
+				</span>
+			{/if}
 			<div class="flex flex-wrap gap-4">
 				<input
 					type="text"

@@ -7,21 +7,22 @@
 
 	export let isOpen = false;
 
-	// Ambil data proyek yang sedang dipilih dari store
 	let project = get(selectedProject);
 	let projectName = project?.name || '';
 	let projectDescription = project?.description || '';
+	let status = project?.status || 'active'; // ⬅️ Tambahkan status
 
 	let submitting = false;
 	let errorMessage = '';
 
 	const dispatch = createEventDispatcher();
 
-	// Reaktif: Update nilai input saat store berubah
+	// Update input secara reaktif jika store berubah
 	$: {
 		project = $selectedProject;
 		projectName = project?.name || '';
 		projectDescription = project?.description || '';
+		status = project?.status || 'active'; // ⬅️ Tambahkan status
 	}
 
 	async function handleSubmit() {
@@ -40,12 +41,12 @@
 			return;
 		}
 
-		// Update data proyek di database
 		const { error } = await supabase
 			.from('projects')
 			.update({
 				name: projectName,
 				description: projectDescription,
+				status, // ⬅️ Update status juga
 				updated_at: new Date().toISOString()
 			})
 			.eq('id', project.id);
@@ -54,8 +55,6 @@
 			console.error('Error updating project:', error);
 			errorMessage = 'Gagal memperbarui proyek: ' + error.message;
 		} else {
-			console.log('Project updated successfully!');
-			// Tutup modal dan trigger refresh data di layout
 			dispatch('projectUpdated');
 			invalidateAll();
 			dispatch('close');
@@ -83,11 +82,11 @@
 						id="editProjectName"
 						bind:value={projectName}
 						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						placeholder="Masukkan nama proyek"
 						required
 					/>
 				</div>
-				<div class="mb-6">
+
+				<div class="mb-4">
 					<label for="editProjectDescription" class="block text-gray-700 font-bold mb-2">
 						Deskripsi
 					</label>
@@ -96,12 +95,30 @@
 						bind:value={projectDescription}
 						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
 						rows="4"
-						placeholder="Tambahkan deskripsi proyek"
 					></textarea>
 				</div>
+
+				<!-- Tambahan: Dropdown status proyek -->
+				<div class="mb-6">
+					<label for="editProjectStatus" class="block text-gray-700 font-bold mb-2">
+						Status Proyek
+					</label>
+					<select
+						id="editProjectStatus"
+						bind:value={status}
+						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+					>
+						<option value="active">Active</option>
+						<option value="on-hold">On Hold</option>
+						<option value="completed">Completed</option>
+						<option value="archived">Archived</option>
+					</select>
+				</div>
+
 				{#if errorMessage}
 					<p class="text-red-500 text-sm mb-4">{errorMessage}</p>
 				{/if}
+
 				<div class="flex justify-end gap-3">
 					<button
 						type="button"
