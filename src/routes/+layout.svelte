@@ -257,9 +257,15 @@
 				fetchUserProfile(data.session.user.id);
 			}
 			// <-- KODE PERBAIKAN: Logic redirect jika tidak ada sesi -->
-			if (!data.session && $page.url.pathname !== '/login') {
+			const currentPath = get(page).url.pathname;
+			if (!data.session && !['/', '/login'].includes(currentPath)) {
 				console.log('No session found. Redirecting to /login...');
 				goto('/login');
+			}
+
+			if (data.session?.user) {
+				console.log('Session found. Fetching user profile...');
+				fetchUserProfile(data.session.user.id);
 			}
 		});
 
@@ -284,7 +290,7 @@
 				selectedProjectId.set(null);
 				allTasks.set([]);
 				allColumns.set([]);
-				goto('/login');
+				goto('/');
 			}
 		});
 
@@ -443,7 +449,7 @@
 			on:close={() => (isAddProjectModalOpen = false)}
 			on:projectAdded={handleProjectAdded}
 		/>
-	{:else if $page.url.pathname === '/login'}
+	{:else if $page.url.pathname === '/login' || $page.url.pathname === '/'}
 		<div class="flex-1">
 			<slot />
 		</div>

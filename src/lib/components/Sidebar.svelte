@@ -32,7 +32,7 @@
 			return;
 		}
 		selectedProjectId.set(projectId);
-		await goto(`/`);
+		await goto(`/app`);
 		await invalidateAll();
 	}
 
