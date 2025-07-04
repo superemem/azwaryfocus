@@ -7,6 +7,8 @@
 	import AddTaskModal from '$lib/components/AddTaskModal.svelte';
 	import EditTaskModal from '$lib/components/EditTaskModal.svelte';
 	import EditProjectModal from '$lib/components/EditProjectModal.svelte';
+	import TaskCard from '$lib/components/TaskCard.svelte';
+	import Column from '$lib/components/Column.svelte';
 	import { goto } from '$app/navigation';
 
 	export let projectId: string;
@@ -148,6 +150,10 @@
 		} else {
 			alert('Tidak ada proyek yang dipilih.');
 		}
+	}
+	function handleMove({ detail }) {
+		const { id, toColumnId } = detail;
+		updateTaskColumn(id, toColumnId); // ini udah lo punya
 	}
 
 	async function archiveProject() {
@@ -363,68 +369,17 @@
 
 		<div class="flex gap-6 overflow-x-auto pb-6">
 			{#each columns as column (column.id)}
-				<div class="flex-shrink-0 min-w-72 w-80 bg-gray-200 p-4 rounded-xl shadow-inner">
-					<h3 class="font-bold text-xl mb-4 text-gray-700 uppercase tracking-wide">
-						{column.name} ({tasks.filter((t) => t.column_id === column.id).length})
-					</h3>
-					<div class="space-y-4">
-						{#each tasks.filter((t) => t.column_id === column.id && t.title
-									.toLowerCase()
-									.includes(searchQuery.toLowerCase())) as task (task.id)}
-							<div
-								class="bg-white p-4 rounded-lg shadow-md border-t-4 border-blue-500 cursor-grab active:cursor-grabbing"
-							>
-								<h4 class="font-semibold text-gray-900 mb-1">{task.title}</h4>
-								<p class="text-sm text-gray-600 mb-2">{task.description}</p>
-								<div class="text-xs text-gray-500 space-y-1">
-									<p><span class="font-medium">Prioritas:</span> {task.priority}</p>
-									<p>
-										<span class="font-medium">Tenggat:</span>
-										{task.due_date ? new Date(task.due_date).toLocaleDateString() : 'N/A'}
-									</p>
-									<p>
-										<span class="font-medium">Ditugaskan ke:</span>
-										{task.assignee_profile?.username || 'Belum ditugaskan'}
-									</p>
-									<p>
-										<span class="font-medium">Dibuat oleh:</span>
-										{task.created_by_profile?.username || 'Unknown'}
-									</p>
-								</div>
-
-								<div class="flex flex-wrap gap-2 mt-4">
-									{#if column.name.toLowerCase() === 'to do'}
-										<button
-											on:click={() => updateTaskColumn(task.id, findColumnIdByName('In Progress'))}
-											class="bg-blue-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-										>
-											Kerjakan Tugas
-										</button>
-									{:else if column.name.toLowerCase() === 'in progress'}
-										<button
-											on:click={() => updateTaskColumn(task.id, findColumnIdByName('Done'))}
-											class="bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
-										>
-											Tandai Selesai
-										</button>
-									{/if}
-									<button
-										on:click={() => openEditModal(task)}
-										class="bg-yellow-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-yellow-600 transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500"
-									>
-										Edit
-									</button>
-									<button
-										on:click={() => deleteTask(task.id)}
-										class="bg-red-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-									>
-										Hapus
-									</button>
-								</div>
-							</div>
-						{/each}
-					</div>
-				</div>
+				<Column
+					{column}
+					allColumns={columns}
+					tasks={tasks.filter(
+						(t) =>
+							t.column_id === column.id && t.title.toLowerCase().includes(searchQuery.toLowerCase())
+					)}
+					on:edit={(e) => openEditModal(e.detail)}
+					on:delete={(e) => deleteTask(e.detail)}
+					on:move={handleMove}
+				/>
 			{/each}
 		</div>
 	{/if}
