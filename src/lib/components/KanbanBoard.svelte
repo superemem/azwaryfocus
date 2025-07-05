@@ -11,6 +11,7 @@
 	import Column from '$lib/components/Column.svelte';
 	import { goto } from '$app/navigation';
 	import { toast, Toaster } from '$lib/toast';
+	import confetti from 'canvas-confetti';
 
 	export let projectId: string;
 
@@ -123,6 +124,25 @@
 
 		loading = false;
 		console.log('DEBUG: loadProjectData finished.');
+	}
+
+	// helper untuk meriah
+	function celebratoryToast(message: string) {
+		// 1. konfeti
+		confetti({
+			particleCount: 200,
+			spread: 360,
+			origin: { y: 0.6 }
+		});
+
+		// 2. suara
+		const audio = new Audio('/notification.mp3');
+		audio.play();
+
+		// 3. toast
+		toast.success(message, {
+			duration: 4000
+		});
 	}
 
 	// PERBAIKAN: Fungsi ini sekarang akan menggunakan array 'columns' lokal
@@ -276,13 +296,13 @@
 			$allTasks = tasks;
 
 			// 3. Display appropriate alerts based on the new column
-			const newColumnName = columns.find((c) => c.id === newColumnId)?.name.toLowerCase();
-			if (newColumnName === 'in progress') {
-				toast('Mulai mengerjakan! Semangat 🥳');
-			} else if (newColumnName === 'done') {
-				toast.success('Tugas selesai! 🎉');
+			const newColName = columns.find((c) => c.id === newColumnId)?.name.toLowerCase();
+			if (newColName === 'in progress') {
+				celebratoryToast('Semangat mengerjakan! 🥳');
+			} else if (newColName === 'done') {
+				celebratoryToast('Yeay, tugas selesai! 🎉');
 			} else {
-				toast('Tugas di-update.');
+				toast('Tugas di‐update!');
 			}
 
 			// 4. Remove the full data reload:

@@ -40,6 +40,7 @@
 		"@supabase/auth-helpers-sveltekit": "^0.13.0",
 		"@supabase/ssr": "^0.6.1",
 		"@supabase/supabase-js": "^2.50.3",
+		"canvas-confetti": "^1.9.3",
 		"dayjs": "^1.11.13",
 		"svelte-5-french-toast": "^2.0.4",
 		"svelte-dnd-action": "^0.9.63"

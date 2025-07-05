@@ -330,7 +330,7 @@
 					</button>
 				</div>
 			{/if}
-			<Toaster />
+			<Toaster class="center-toaster" position="center" />
 			<slot />
 		</main>
 
