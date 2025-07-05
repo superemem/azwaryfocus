@@ -2,6 +2,7 @@
 	import { supabase } from '$lib/supabase';
 	import { goto } from '$app/navigation';
 	import { session } from '$lib/stores/authStore';
+	import toast from 'svelte-5-french-toast';
 
 	let email = '';
 	let password = '';
@@ -14,7 +15,7 @@
 		const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
 		if (error) {
-			alert(error.message);
+			handleError(error, 'login');
 			loading = false;
 			return;
 		}
@@ -35,13 +36,13 @@
 
 	async function handleSignup() {
 		loading = true;
-		const { error } = await supabase.auth.signUp({ email, password });
+		handleError(error, 'mendaftar');
 		loading = false;
 
 		if (error) {
-			alert(error.message);
+			handleError(error, 'mendaftar');
 		} else {
-			alert('Cek email kamu untuk verifikasi!');
+			toast('Cek email kamu untuk verifikasi!');
 		}
 	}
 </script>

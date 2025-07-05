@@ -106,7 +106,7 @@
 			.eq('id', userId);
 
 		if (updateError) {
-			alert('Gagal update profil: ' + updateError.message);
+			handleError(error, 'gagal mengupdate profile');
 		} else {
 			await fetchAndCalculateStats();
 		}

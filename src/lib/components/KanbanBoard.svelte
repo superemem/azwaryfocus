@@ -12,8 +12,11 @@
 	import { goto } from '$app/navigation';
 	import { toast, Toaster } from '$lib/toast';
 	import confetti from 'canvas-confetti';
+	import { handleError } from '$lib/errorHandler';
 
 	export let projectId: string;
+	export let projectCreator: string;
+	export let teamMembers: string[];
 
 	let columns: any[] = [];
 	let tasks: any[] = [];
@@ -34,6 +37,16 @@
 		console.log('DEBUG: Project ID changed, loading data for:', projectId);
 		loadProjectData(projectId);
 	}
+
+	const todoId = columns.find((c) => c.name.toLowerCase() === 'to do')?.id;
+	const inProgressId = columns.find((c) => c.name.toLowerCase() === 'in progress')?.id;
+	const doneId = columns.find((c) => c.name.toLowerCase() === 'done')?.id;
+
+	$: todoCount = tasks.filter((t) => t.column_id === todoId).length;
+	$: inProgressCount = tasks.filter((t) => t.column_id === inProgressId).length;
+	$: doneCount = tasks.filter((t) => t.column_id === doneId).length;
+	$: totalTasks = todoCount + inProgressCount + doneCount;
+	$: progressPercent = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0;
 
 	async function loadProjectData(projectId: string) {
 		if (!projectId) {
@@ -160,8 +173,8 @@
 			selectedColumnId = toDoColumn.id;
 			isModalOpen = true;
 		} else {
-			alert('Kolom "TO DO" tidak ditemukan. Pastikan proyek memiliki kolom.');
-			console.error('Cannot find "TO DO" column to add task to.');
+			const error = new Error('Cannot find "TO DO" column to add task to.');
+			handleError(error, 'menambahkan tugas');
 		}
 	}
 
@@ -169,7 +182,8 @@
 		if ($selectedProject) {
 			isEditProjectModalOpen = true;
 		} else {
-			alert('Tidak ada proyek yang dipilih.');
+			const error = new Error('Cannot find "TO DO" column to add task to.');
+			handleError(error, 'menambahkan tugas');
 		}
 	}
 	function handleMove({ detail }) {
@@ -195,13 +209,15 @@
 
 			if (updateError) throw updateError;
 
-			alert('Proyek berhasil diarsipkan!');
+			const error = new Error('Cannot find "TO DO" column to add task to.');
+			handleError(error, 'menambahkan tugas');
+
 			selectedProjectId.set(null);
 			selectedProject.set(null);
 			goto('/projects'); // Arahkan ke halaman daftar proyek
 		} catch (err) {
-			console.error('Gagal mengarsipkan proyek:', err);
-			alert('Gagal mengarsipkan proyek: ' + err.message);
+			// Ganti console.error dan alert dengan handleError
+			handleError(err, 'mengarsipkan proyek');
 		}
 	}
 
@@ -209,12 +225,14 @@
 		const { title, description } = event.detail;
 
 		if (!$session || !$session.user) {
-			alert('Kamu harus login untuk menambah task.');
+			const error = new Error('login dulu untuk menambah tugas');
+			handleError(error, 'menambahkan tugas');
 			return;
 		}
 
 		if (!selectedColumnId) {
-			alert('Gagal menambah task: Kolom tujuan tidak ditemukan.');
+			const error = new Error('Gagal menambah task: Kolom tujuan tidak ditemukan.');
+			handleError(error, 'menambahkan tugas');
 			return;
 		}
 
@@ -229,7 +247,8 @@
 
 		if (insertError) {
 			console.error('Error adding new task:', insertError);
-			alert('Gagal menambah task. Cek konsol untuk detailnya.');
+			const error = new Error('Gagal menambahkan tugas.');
+			handleError(error, 'menambahkan tugas');
 		} else {
 			console.log('Task added successfully:', data);
 			await loadProjectData(projectId); // Reload data setelah task ditambahkan
@@ -253,10 +272,11 @@
 
 		if (updateError) {
 			console.error('Error updating task:', updateError.message);
-			alert('Gagal mengedit tugas: ' + updateError.message);
+			const error = new Error('Gagal mengedit tugas.');
+			handleError(error, 'menambahkan tugas');
 		} else {
 			console.log('Task updated successfully:', { id, title, description, assigned_to });
-			alert('Task berhasil diedit!');
+			toast('Tugas di‐update!');
 			await loadProjectData(projectId);
 		}
 	}
@@ -268,10 +288,9 @@
 		const { error: deleteError } = await supabase.from('tasks').delete().eq('id', taskId);
 
 		if (deleteError) {
-			console.error('Error deleting task:', deleteError.message);
-			alert('Gagal menghapus tugas: ' + deleteError.message);
+			handleError(deleteError, 'menghapus tugas');
 		} else {
-			console.log('Task deleted successfully.');
+			toast('Tugas berhasil dihapus!');
 			await loadProjectData(projectId);
 		}
 	}
@@ -284,7 +303,7 @@
 
 		if (error) {
 			console.error('Error updating task:', error.message);
-			alert('Gagal mengupdate tugas: ' + error.message);
+			handleError(error, 'gagal mengupdate tugas');
 		} else {
 			// --- START OF CHANGES ---
 			// 1. Update the local 'tasks' array directly
@@ -304,15 +323,12 @@
 			} else {
 				toast('Tugas di‐update!');
 			}
-
-			// 4. Remove the full data reload:
-			// await loadProjectData(projectId); // HAPUS BARIS INI
-			// --- END OF CHANGES ---
 		}
 	}
 
 	// Real-time listeners
 	onMount(() => {
+		// Task Channel dengan optimasi incremental updates
 		const taskChannel = supabase.channel('public:tasks');
 		taskChannel
 			.on(
@@ -320,11 +336,34 @@
 				{ event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` },
 				(payload) => {
 					console.log('DEBUG: Real-time task change:', payload);
-					loadProjectData(projectId);
+
+					// Update incremental berdasarkan jenis event
+					const { eventType, new: newRecord, old: oldRecord } = payload;
+
+					if (eventType === 'INSERT') {
+						// Tambahkan task baru ke array
+						tasks = [...tasks, newRecord];
+						$allTasks = tasks;
+					} else if (eventType === 'UPDATE') {
+						// Update task yang sudah ada
+						tasks = tasks.map((t) => (t.id === newRecord.id ? newRecord : t));
+						$allTasks = tasks;
+					} else if (eventType === 'DELETE') {
+						// Hapus task dari array
+						tasks = tasks.filter((t) => t.id !== oldRecord.id);
+						$allTasks = tasks;
+					}
+
+					// Reorganisasi jika diperlukan
+					// Jika Anda memiliki fungsi untuk mengelompokkan tugas berdasarkan kolom
+					if (typeof organizeTasksByColumns === 'function') {
+						organizeTasksByColumns();
+					}
 				}
 			)
 			.subscribe();
 
+		// Column Channel dengan optimasi incremental updates
 		const columnChannel = supabase.channel('public:columns');
 		columnChannel
 			.on(
@@ -332,7 +371,30 @@
 				{ event: '*', schema: 'public', table: 'columns', filter: `project_id=eq.${projectId}` },
 				(payload) => {
 					console.log('DEBUG: Real-time column change:', payload);
-					loadProjectData(projectId);
+
+					// Update incremental berdasarkan jenis event
+					const { eventType, new: newRecord, old: oldRecord } = payload;
+
+					if (eventType === 'INSERT') {
+						// Tambahkan kolom baru ke array
+						columns = [...columns, newRecord];
+					} else if (eventType === 'UPDATE') {
+						// Update kolom yang sudah ada
+						columns = columns.map((c) => (c.id === newRecord.id ? newRecord : c));
+					} else if (eventType === 'DELETE') {
+						// Hapus kolom dari array
+						columns = columns.filter((c) => c.id !== oldRecord.id);
+
+						// Opsional: Jika kolom dihapus, Anda mungkin perlu menangani tugas-tugas
+						// yang dimiliki oleh kolom tersebut (pindahkan atau hapus)
+						tasks = tasks.filter((t) => t.column_id !== oldRecord.id);
+						$allTasks = tasks;
+					}
+
+					// Reorganisasi jika diperlukan
+					if (typeof organizeTasksByColumns === 'function') {
+						organizeTasksByColumns();
+					}
 				}
 			)
 			.subscribe();

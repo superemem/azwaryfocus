@@ -2,6 +2,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { supabase } from '$lib/supabase';
 	import { session } from '$lib/stores/authStore';
+	import toast from 'svelte-5-french-toast';
 
 	const dispatch = createEventDispatcher();
 
@@ -36,7 +37,7 @@
 
 	function handleSubmit() {
 		if (!title.trim()) {
-			alert('Judul tidak boleh kosong!');
+			toast('Judul tidak boleh kosong!');
 			return;
 		}
 

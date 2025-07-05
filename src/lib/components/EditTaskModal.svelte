@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { session, userProfile } from '$lib/stores/authStore'; // <-- IMPORT userProfile di sini juga
+	import toast from 'svelte-5-french-toast';
 
 	export let isOpen: boolean;
 	export let task: any = null;
@@ -55,7 +56,7 @@
 
 	function handleSave() {
 		if (localTitle.trim() === '') {
-			alert('Judul task tidak boleh kosong!');
+			toast('Judul task tidak boleh kosong!');
 			return;
 		}
 
