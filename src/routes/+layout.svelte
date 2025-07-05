@@ -11,6 +11,7 @@
 	import { goto } from '$app/navigation';
 	import EditProfileModal from '$lib/components/EditProfileModal.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
+	import { Toaster } from '$lib/toast';
 
 	let projects: any[] = [];
 	let loading = true;
@@ -329,6 +330,7 @@
 					</button>
 				</div>
 			{/if}
+			<Toaster />
 			<slot />
 		</main>
 

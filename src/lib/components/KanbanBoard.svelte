@@ -10,6 +10,7 @@
 	import TaskCard from '$lib/components/TaskCard.svelte';
 	import Column from '$lib/components/Column.svelte';
 	import { goto } from '$app/navigation';
+	import { toast, Toaster } from '$lib/toast';
 
 	export let projectId: string;
 
@@ -277,11 +278,11 @@
 			// 3. Display appropriate alerts based on the new column
 			const newColumnName = columns.find((c) => c.id === newColumnId)?.name.toLowerCase();
 			if (newColumnName === 'in progress') {
-				alert('Selamat mengerjakan tugas. Semangat ya 🥳');
+				toast('Mulai mengerjakan! Semangat 🥳');
 			} else if (newColumnName === 'done') {
-				alert('Yeay, selamat kamu telah menyelesaikan tugas dengan baik 🎉');
+				toast.success('Tugas selesai! 🎉');
 			} else {
-				alert('Tugas Telah Diupdate!');
+				toast('Tugas di-update.');
 			}
 
 			// 4. Remove the full data reload:
