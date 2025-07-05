@@ -256,7 +256,7 @@
 	}
 
 	async function updateTaskColumn(taskId: string, newColumnId: string) {
-		const { data, error } = await supabase
+		const { error } = await supabase
 			.from('tasks')
 			.update({ column_id: newColumnId })
 			.eq('id', taskId);
@@ -265,6 +265,16 @@
 			console.error('Error updating task:', error.message);
 			alert('Gagal mengupdate tugas: ' + error.message);
 		} else {
+			// --- START OF CHANGES ---
+			// 1. Update the local 'tasks' array directly
+			tasks = tasks.map((task) =>
+				task.id === taskId ? { ...task, column_id: newColumnId } : task
+			);
+
+			// 2. Update the global store (if you want other components to react)
+			$allTasks = tasks;
+
+			// 3. Display appropriate alerts based on the new column
 			const newColumnName = columns.find((c) => c.id === newColumnId)?.name.toLowerCase();
 			if (newColumnName === 'in progress') {
 				alert('Selamat mengerjakan tugas. Semangat ya 🥳');
@@ -273,7 +283,10 @@
 			} else {
 				alert('Tugas Telah Diupdate!');
 			}
-			await loadProjectData(projectId);
+
+			// 4. Remove the full data reload:
+			// await loadProjectData(projectId); // HAPUS BARIS INI
+			// --- END OF CHANGES ---
 		}
 	}
 

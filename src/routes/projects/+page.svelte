@@ -51,7 +51,7 @@
 
 	function selectProject(projectId: string) {
 		selectedProjectId.set(projectId);
-		goto('/app');
+		goto(`/projects/${projectId}`);
 	}
 
 	onMount(() => {

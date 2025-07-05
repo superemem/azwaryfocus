@@ -10,14 +10,27 @@
 
 	async function handleLogin() {
 		loading = true;
-		const { error } = await supabase.auth.signInWithPassword({ email, password });
-		loading = false;
+
+		const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
 		if (error) {
 			alert(error.message);
-		} else {
-			goto('/profile'); // Redirect to dashboard after successful login
+			loading = false;
+			return;
 		}
+
+		// Tunggu session client terbentuk sebelum redirect
+		const MAX_WAIT = 2000;
+		const start = Date.now();
+
+		while (!data.session && Date.now() - start < MAX_WAIT) {
+			await new Promise((r) => setTimeout(r, 100));
+		}
+
+		session.set(data.session); // optional: sinkronkan ke store
+
+		loading = false;
+		goto('/profile'); // baru redirect
 	}
 
 	async function handleSignup() {
