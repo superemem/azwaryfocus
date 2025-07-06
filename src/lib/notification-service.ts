@@ -96,7 +96,7 @@ export class NotificationService {
 
 	// Task-specific notifications
 	taskCreated(taskTitle: string): void {
-		this.showToast(`✅ Tugas "${taskTitle}" berhasil dibuat!`, { type: 'success' });
+		this.showToast(`Tugas "${taskTitle}" berhasil dibuat!`, { type: 'success' });
 		this.playAudio('notification');
 	}
 

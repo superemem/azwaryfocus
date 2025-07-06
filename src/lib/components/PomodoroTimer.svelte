@@ -1,55 +1,76 @@
+<!-- src/lib/components/PomodoroTimer.svelte -->
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { createEventDispatcher, onDestroy } from 'svelte';
+	import { Play, Pause } from '@lucide/svelte';
 
-	// Durasi dalam detik
-	let workDuration = 25 * 60;
+	const dispatch = createEventDispatcher();
+
+	let workDuration = 25 * 60; // detik
 	let breakDuration = 5 * 60;
 	let longBreakDuration = 15 * 60;
 
 	let timeRemaining = workDuration;
 	let isRunning = false;
-	let currentMode: 'work' | 'break' = 'work';
-	let cycles = 0; // Menghitung siklus untuk istirahat panjang
-
+	let currentMode: 'work' | 'short-break' | 'long-break' = 'work';
+	let cyclesCompleted = 0;
 	let intervalId: number | null = null;
 	let audio: HTMLAudioElement;
 
-	// Variabel untuk SVG progress bar
-	let radius = 100;
-	let circumference = 2 * Math.PI * radius;
+	// Track actual session start time and elapsed time
+	let sessionStartTime = 0;
+	let totalElapsedTime = 0;
 
-	// Variabel reaktif untuk total durasi dan offset stroke SVG
-	let totalDuration = workDuration;
-	$: totalDuration =
-		currentMode === 'work'
-			? workDuration
-			: currentMode === 'break' && timeRemaining === longBreakDuration
-				? longBreakDuration
-				: breakDuration;
-	$: progress = timeRemaining / totalDuration;
-	$: strokeOffset = circumference - progress * circumference;
+	export let displayTime = '';
+	$: displayTime = formatTime(timeRemaining);
 
-	// Fungsi untuk memformat waktu ke MM:SS
-	function formatTime(seconds: number): string {
-		const minutes = Math.floor(seconds / 60);
-		const remainingSeconds = seconds % 60;
-		return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+	function formatTime(sec: number) {
+		const m = Math.floor(sec / 60)
+			.toString()
+			.padStart(2, '0');
+		const s = (sec % 60).toString().padStart(2, '0');
+		return `${m}:${s}`;
 	}
 
-	// Fungsi kontrol timer
+	export function startTimerExtern() {
+		dispatch('timerStart', { mode: currentMode });
+		startTimer();
+	}
+
+	export function pauseTimerExtern() {
+		dispatch('timerPause', { mode: currentMode });
+		pauseTimer();
+	}
+
+	export function resumeTimerExtern() {
+		dispatch('timerResume', { mode: currentMode });
+		startTimer();
+	}
+
+	export function resetTimerExtern() {
+		pauseTimer();
+		resetSession();
+		changeMode(currentMode);
+		dispatch('timerStop', { mode: currentMode });
+	}
+
+	// Export function to set remaining time (for session recovery)
+	export function setRemainingTime(seconds: number) {
+		timeRemaining = Math.max(0, Math.min(seconds, workDuration));
+	}
+
 	function startTimer() {
 		if (!isRunning) {
 			isRunning = true;
+			if (sessionStartTime === 0) {
+				sessionStartTime = Date.now();
+			}
+
 			intervalId = setInterval(() => {
 				if (timeRemaining > 0) {
 					timeRemaining--;
+					totalElapsedTime = Math.floor((Date.now() - sessionStartTime) / 1000);
 				} else {
-					// Timer selesai
-					clearInterval(intervalId!);
-					isRunning = false;
-					playAlarm();
-					switchMode();
-					startTimer(); // Mulai timer mode baru secara otomatis
+					completeSession();
 				}
 			}, 1000);
 		}
@@ -58,170 +79,90 @@
 	function pauseTimer() {
 		if (intervalId) {
 			clearInterval(intervalId);
+			intervalId = null;
 			isRunning = false;
 		}
 	}
 
-	function resetTimer() {
-		pauseTimer();
-		if (currentMode === 'work') {
-			timeRemaining = workDuration;
-		} else if (currentMode === 'break') {
-			timeRemaining = breakDuration;
-		} else {
-			// Istirahat panjang
-			timeRemaining = longBreakDuration;
-		}
+	function resetSession() {
+		sessionStartTime = 0;
+		totalElapsedTime = 0;
+	}
+
+	function completeSession() {
+		clearInterval(intervalId!);
+		intervalId = null;
+		isRunning = false;
+		playAlarm();
+
+		// Calculate actual duration in milliseconds
+		const actualDurationMs = totalElapsedTime * 1000;
+		const wasCompleted = currentMode === 'work' && timeRemaining === 0;
+
+		dispatch('sessionComplete', {
+			mode: currentMode,
+			duration: actualDurationMs,
+			completed: wasCompleted
+		});
+
+		resetSession();
+		switchMode();
 	}
 
 	function switchMode() {
 		if (currentMode === 'work') {
-			cycles++;
-			if (cycles % 4 === 0) {
-				currentMode = 'break';
-				timeRemaining = longBreakDuration;
-				alert('Saatnya istirahat panjang!');
+			cyclesCompleted++;
+			if (cyclesCompleted % 4 === 0) {
+				changeMode('long-break');
 			} else {
-				currentMode = 'break';
-				timeRemaining = breakDuration;
-				alert('Saatnya istirahat!');
+				changeMode('short-break');
 			}
 		} else {
-			currentMode = 'work';
-			timeRemaining = workDuration;
-			alert('Saatnya kerja!');
+			changeMode('work');
 		}
+	}
+
+	function changeMode(mode: typeof currentMode) {
+		currentMode = mode;
+		timeRemaining =
+			mode === 'work' ? workDuration : mode === 'short-break' ? breakDuration : longBreakDuration;
+		resetSession();
 	}
 
 	function playAlarm() {
-		if (audio) {
-			audio.play();
-		}
+		if (audio) audio.play().catch(() => {});
 	}
 
-	// Bersihkan interval saat komponen dihancurkan
 	onDestroy(() => {
-		if (intervalId) {
-			clearInterval(intervalId);
-		}
+		if (intervalId) clearInterval(intervalId);
 	});
 </script>
 
-<div
-	class="p-8 max-w-lg mx-auto bg-slate-900 rounded-3xl shadow-2xl space-y-6 text-center mt-12 text-white"
->
-	<h3 class="text-4xl font-extrabold tracking-tight">Pomodoro Timer</h3>
-
-	<div class="relative w-64 h-64 mx-auto my-8">
-		<svg
-			class="w-full h-full transform -rotate-90"
-			viewBox="0 0 220 220"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<circle
-				class="text-gray-700"
-				stroke="currentColor"
-				stroke-width="12"
-				fill="#2d3748"
-				r="100"
-				cx="110"
-				cy="110"
-				stroke-opacity="0.3"
-			/>
-			<circle
-				class="transition-all duration-100 ease-linear"
-				stroke={currentMode === 'work' ? '#EF4444' : '#3B82F6'}
-				stroke-width="12"
-				stroke-linecap="round"
-				fill="transparent"
-				r="100"
-				cx="110"
-				cy="110"
-				style={`stroke-dasharray: ${circumference}; stroke-dashoffset: ${strokeOffset};`}
-			/>
-		</svg>
-
-		<div class="absolute inset-0 flex flex-col items-center justify-center">
-			<div class="text-6xl font-mono font-bold tracking-wider z-10">
-				{formatTime(timeRemaining)}
-			</div>
-			<button
-				on:click={isRunning ? pauseTimer : startTimer}
-				class="absolute bottom-12 w-20 h-20 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors"
-			>
-				{#if !isRunning}
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-10 w-10"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-				{:else}
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-10 w-10"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-					>
-						<path
-							fill-rule="evenodd"
-							d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
-							clip-rule="evenodd"
-						/>
-					</svg>
-				{/if}
-			</button>
-		</div>
-	</div>
-
-	<div class="flex justify-center gap-4 mt-8">
-		<button
-			on:click={() => {
-				currentMode = 'work';
-				resetTimer();
-			}}
-			class={`px-6 py-2 rounded-full font-bold transition-colors ${currentMode === 'work' ? 'bg-red-600 text-white shadow-md' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-		>
-			Kerja (25m)
-		</button>
-		<button
-			on:click={() => {
-				currentMode = 'break';
-				timeRemaining = breakDuration;
-				resetTimer();
-			}}
-			class={`px-6 py-2 rounded-full font-bold transition-colors ${currentMode === 'break' && timeRemaining === breakDuration ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-		>
-			Istirahat (5m)
-		</button>
-		<button
-			on:click={() => {
-				currentMode = 'break';
-				timeRemaining = longBreakDuration;
-				resetTimer();
-			}}
-			class={`px-6 py-2 rounded-full font-bold transition-colors ${currentMode === 'break' && timeRemaining === longBreakDuration ? 'bg-teal-600 text-white shadow-md' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-		>
-			Istirahat Panjang (15m)
-		</button>
-	</div>
-
+<div class="bg-white p-4 rounded-lg shadow-lg flex items-center justify-between">
+	<div class="text-5xl font-inter font-semibold">{displayTime}</div>
 	<button
-		on:click={resetTimer}
-		class="bg-gray-500 text-white font-bold py-4 px-10 rounded-full text-lg shadow-xl hover:bg-gray-600 transition-transform transform hover:scale-105 mt-6"
+		on:click={isRunning ? pauseTimerExtern : startTimerExtern}
+		class="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center"
 	>
-		Reset
+		{#if !isRunning}
+			<Play color="#ffffff" size={16} />
+			<!-- play icon -->
+		{:else}
+			<Pause color="#ffffff" size={16} />
+			<!-- pause icon -->
+		{/if}
 	</button>
 </div>
+<div class="flex space-x-2 mt-4 justify-center">
+	<button on:click={() => changeMode('work')} class="px-4 py-2 rounded-lg">Kerja 25m</button>
+	<button on:click={() => changeMode('short-break')} class="px-4 py-2 rounded-lg"
+		>Istirahat 5m</button
+	>
+	<button on:click={() => changeMode('long-break')} class="px-4 py-2 rounded-lg"
+		>Istirahat 15m</button
+	>
+</div>
+<audio bind:this={audio} src="/notification.mp3" preload="auto" />
 
-<audio bind:this={audio} src="/alarm-sound.wav" preload="auto"></audio>
-
-<style>
-	/* Kamu bisa tambahkan style kustom di sini jika diperlukan */
-</style>
+<slot name="dailySessions" />
+<slot name="sessionDots" />

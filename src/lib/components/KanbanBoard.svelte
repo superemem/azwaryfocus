@@ -15,7 +15,7 @@
 	import { handleError } from '$lib/errorHandler';
 
 	export let projectId: string;
-	export let projectCreator: string;
+	export let projectLead;
 	export let teamMembers: string[];
 
 	// Initialize Kanban logic
@@ -226,6 +226,24 @@
 				</button>
 			</div>
 		</div>
+		<!-- ✨ Tambahan: Project Leader & Team -->
+		<div class="mt-4 space-y-1">
+			<p class="text-sm text-gray-700">
+				<span class="font-semibold">Project Leader:</span>
+				{projectLead}
+			</p>
+			<p class="text-sm text-gray-700">
+				<span class="font-semibold">Project Team:</span>
+				{#if teamMembers && teamMembers.length > 0}
+					{#each teamMembers as member, i}
+						<span>{member}{i < teamMembers.length - 1 ? ', ' : ''}</span>
+					{/each}
+				{:else}
+					<span class="italic text-gray-500">Belum ada anggota</span>
+				{/if}
+			</p>
+		</div>
+		<!-- ✨ Selesai tambahan -->
 
 		{#if project?.description}
 			<p class="text-gray-600 text-lg mb-6">{project.description}</p>
