@@ -330,7 +330,7 @@
 					</button>
 				</div>
 			{/if}
-			<Toaster class="center-toaster" position="center" />
+			<Toaster class="center-toaster w-64 text-wrap" position="center" />
 			<slot />
 		</main>
 

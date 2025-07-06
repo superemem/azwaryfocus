@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { supabase } from '$lib/supabase';
 	import { onMount } from 'svelte';
 	import { session } from '../stores/authStore';
 	import { selectedProjectId, selectedProject } from '../stores/projectStore';
@@ -13,6 +12,18 @@
 	import { toast, Toaster } from '$lib/toast';
 	import confetti from 'canvas-confetti';
 	import { handleError } from '$lib/errorHandler';
+
+	// Import service functions
+	import {
+		tambahTask,
+		editTask,
+		hapusTask,
+		pindahTask,
+		loadFullProjectData,
+		setupTaskListener,
+		setupColumnListener,
+		archiveProject
+	} from '$lib/task-service';
 
 	export let projectId: string;
 	export let projectCreator: string;
@@ -33,14 +44,19 @@
 	let searchQuery = '';
 	let isEditProjectModalOpen = false;
 
+	// Real-time listener cleanup functions
+	let taskListenerCleanup: (() => void) | null = null;
+	let columnListenerCleanup: (() => void) | null = null;
+
 	$: if (projectId) {
 		console.log('DEBUG: Project ID changed, loading data for:', projectId);
 		loadProjectData(projectId);
 	}
 
-	const todoId = columns.find((c) => c.name.toLowerCase() === 'to do')?.id;
-	const inProgressId = columns.find((c) => c.name.toLowerCase() === 'in progress')?.id;
-	const doneId = columns.find((c) => c.name.toLowerCase() === 'done')?.id;
+	// Computed values
+	$: todoId = columns.find((c) => c.name.toLowerCase() === 'to do')?.id;
+	$: inProgressId = columns.find((c) => c.name.toLowerCase() === 'in progress')?.id;
+	$: doneId = columns.find((c) => c.name.toLowerCase() === 'done')?.id;
 
 	$: todoCount = tasks.filter((t) => t.column_id === todoId).length;
 	$: inProgressCount = tasks.filter((t) => t.column_id === inProgressId).length;
@@ -48,14 +64,17 @@
 	$: totalTasks = todoCount + inProgressCount + doneCount;
 	$: progressPercent = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0;
 
+	// Filtered tasks based on search
+	$: filteredTasks = tasks.filter(
+		(task) =>
+			task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+			task.description.toLowerCase().includes(searchQuery.toLowerCase())
+	);
+
 	async function loadProjectData(projectId: string) {
 		if (!projectId) {
 			console.log('DEBUG: No project ID provided to loadProjectData. Clearing board.');
-			tasks = [];
-			columns = [];
-			$allTasks = [];
-			$allColumns = [];
-			loading = false;
+			resetBoardState();
 			return;
 		}
 
@@ -63,118 +82,141 @@
 		error = null;
 		console.log(`DEBUG: Starting loadProjectData for projectId: ${projectId}`);
 
-		const { data: projectData, error: projectError } = await supabase
-			.from('projects')
-			.select('id, name, description, status')
-			.eq('id', projectId)
-			.single();
+		try {
+			// Use the service function for optimized data loading
+			const {
+				project,
+				columns: columnsData,
+				tasks: tasksData,
+				profiles: profilesData
+			} = await loadFullProjectData(projectId);
 
-		if (projectError) {
-			console.error('DEBUG: Error fetching project data in KanbanBoard:', projectError);
-			$selectedProject = null;
-			columns = [];
-			tasks = [];
-			loading = false;
-			return;
-		}
-		$selectedProject = projectData;
-		console.log('DEBUG: Fetched project details:', projectData);
-
-		const { data: columnsData, error: columnsError } = await supabase
-			.from('columns')
-			.select('*')
-			.eq('project_id', projectId)
-			.order('order', { ascending: true });
-
-		if (columnsError) {
-			console.error('DEBUG: Error fetching columns:', columnsError);
-			error = 'Error fetching columns: ' + columnsError.message;
-			loading = false;
-			return;
-		}
-		columns = columnsData;
-		$allColumns = columnsData; // Update global store juga
-		console.log('DEBUG: Fetched columns:', columns.length, columnsData);
-
-		const columnIdsForTasks = columns.map((col) => col.id); // Gunakan ID kolom yang baru saja diambil
-		if (columnIdsForTasks.length === 0) {
-			console.log('DEBUG: No columns found for this project. Tasks will be empty.');
-			tasks = [];
-			$allTasks = [];
-			loading = false;
-			return;
-		}
-
-		const { data: tasksData, error: tasksError } = await supabase
-			.from('tasks')
-			.select(
-				'*, assignee_profile:profiles!tasks_assigned_to_fkey(username), created_by_profile:profiles!tasks_created_by_fkey(username)'
-			)
-			.in('column_id', columnIdsForTasks) // Gunakan ID kolom yang sudah difilter
-			.order('order', { ascending: true });
-
-		if (tasksError) {
-			console.error('DEBUG: Error fetching tasks:', tasksError);
-			error = 'Error fetching tasks: ' + tasksError.message;
-			loading = false;
-			return;
-		}
-		tasks = tasksData;
-		$allTasks = tasksData; // Update global store juga
-		console.log('DEBUG: Fetched tasks:', tasks.length, tasksData);
-
-		const { data: profilesData, error: profilesError } = await supabase
-			.from('profiles')
-			.select('id, username')
-			.order('username');
-
-		if (profilesError) {
-			console.error('DEBUG: Error fetching profiles:', profilesError);
-		} else {
+			// Update local state
+			$selectedProject = project;
+			columns = columnsData;
+			tasks = tasksData;
 			profiles = profilesData;
-			console.log('DEBUG: Fetched profiles:', profilesData.length);
-		}
 
-		loading = false;
-		console.log('DEBUG: loadProjectData finished.');
+			// Update global stores
+			$allColumns = columnsData;
+			$allTasks = tasksData;
+
+			console.log('DEBUG: Project data loaded successfully');
+			console.log('- Project:', project);
+			console.log('- Columns:', columnsData.length);
+			console.log('- Tasks:', tasksData.length);
+			console.log('- Profiles:', profilesData.length);
+
+			// Setup real-time listeners
+			setupRealtimeListeners();
+		} catch (err) {
+			console.error('DEBUG: Error loading project data:', err);
+			error = err.message || 'Gagal memuat data project';
+			handleError(err, 'memuat data project');
+		} finally {
+			loading = false;
+		}
 	}
 
-	// helper untuk meriah
+	function resetBoardState() {
+		tasks = [];
+		columns = [];
+		profiles = [];
+		$allTasks = [];
+		$allColumns = [];
+		$selectedProject = null;
+		loading = false;
+		cleanupListeners();
+	}
+
+	function setupRealtimeListeners() {
+		// Cleanup previous listeners
+		cleanupListeners();
+
+		// Setup task listener
+		taskListenerCleanup = setupTaskListener(projectId, {
+			onInsert: (task) => {
+				console.log('Real-time: Task inserted', task);
+				tasks = [...tasks, task];
+				$allTasks = tasks;
+			},
+			onUpdate: (task) => {
+				console.log('Real-time: Task updated', task);
+				tasks = tasks.map((t) => (t.id === task.id ? task : t));
+				$allTasks = tasks;
+			},
+			onDelete: (taskId) => {
+				console.log('Real-time: Task deleted', taskId);
+				tasks = tasks.filter((t) => t.id !== taskId);
+				$allTasks = tasks;
+			}
+		});
+
+		// Setup column listener
+		columnListenerCleanup = setupColumnListener(projectId, {
+			onInsert: (column) => {
+				console.log('Real-time: Column inserted', column);
+				columns = [...columns, column];
+				$allColumns = columns;
+			},
+			onUpdate: (column) => {
+				console.log('Real-time: Column updated', column);
+				columns = columns.map((c) => (c.id === column.id ? column : c));
+				$allColumns = columns;
+			},
+			onDelete: (columnId) => {
+				console.log('Real-time: Column deleted', columnId);
+				columns = columns.filter((c) => c.id !== columnId);
+				// Also remove tasks from deleted column
+				tasks = tasks.filter((t) => t.column_id !== columnId);
+				$allColumns = columns;
+				$allTasks = tasks;
+			}
+		});
+	}
+
+	function cleanupListeners() {
+		if (taskListenerCleanup) {
+			taskListenerCleanup();
+			taskListenerCleanup = null;
+		}
+		if (columnListenerCleanup) {
+			columnListenerCleanup();
+			columnListenerCleanup = null;
+		}
+	}
+
+	// Helper untuk celebration
 	function celebratoryToast(message: string) {
-		// 1. konfeti
 		confetti({
 			particleCount: 200,
 			spread: 360,
 			origin: { y: 0.6 }
 		});
 
-		// 2. suara
 		const audio = new Audio('/notification.mp3');
-		audio.play();
+		audio.play().catch(() => {
+			// Ignore audio play errors
+		});
 
-		// 3. toast
 		toast.success(message, {
 			duration: 4000
 		});
 	}
 
-	// PERBAIKAN: Fungsi ini sekarang akan menggunakan array 'columns' lokal
 	function findColumnIdByName(columnName: string) {
 		console.log(`DEBUG: findColumnIdByName called for: ${columnName}`);
-		console.log('DEBUG: Current local columns array:', columns);
 		const column = columns.find((col) => col.name.toLowerCase() === columnName.toLowerCase());
 		return column ? column.id : null;
 	}
 
 	function openModalForNewTask() {
-		// Gunakan array 'columns' lokal
 		const toDoColumn = columns.find((col) => col.name.toLowerCase() === 'to do');
 		if (toDoColumn) {
 			selectedColumnId = toDoColumn.id;
 			isModalOpen = true;
 		} else {
-			const error = new Error('Cannot find "TO DO" column to add task to.');
-			handleError(error, 'menambahkan tugas');
+			handleError(new Error('Kolom "TO DO" tidak ditemukan'), 'menambahkan tugas');
 		}
 	}
 
@@ -182,41 +224,30 @@
 		if ($selectedProject) {
 			isEditProjectModalOpen = true;
 		} else {
-			const error = new Error('Cannot find "TO DO" column to add task to.');
-			handleError(error, 'menambahkan tugas');
+			handleError(new Error('Project tidak ditemukan'), 'mengedit project');
 		}
 	}
+
 	function handleMove({ detail }) {
 		const { id, toColumnId } = detail;
-		updateTaskColumn(id, toColumnId); // ini udah lo punya
+		updateTaskColumn(id, toColumnId);
 	}
 
-	async function archiveProject() {
+	async function handleArchiveProject() {
 		const projectName = $selectedProject?.name || 'Proyek ini';
 		const confirmed = confirm(
 			`Apakah kamu yakin ingin mengarsipkan proyek "${projectName}"? Proyek ini akan disembunyikan dari daftar.`
 		);
 
-		if (!confirmed) {
-			return;
-		}
+		if (!confirmed) return;
 
 		try {
-			const { error: updateError } = await supabase
-				.from('projects')
-				.update({ status: 'archived' })
-				.eq('id', $selectedProjectId);
-
-			if (updateError) throw updateError;
-
-			const error = new Error('Cannot find "TO DO" column to add task to.');
-			handleError(error, 'menambahkan tugas');
-
+			await archiveProject($selectedProjectId);
+			toast.success('Proyek berhasil diarsipkan!');
 			selectedProjectId.set(null);
 			selectedProject.set(null);
-			goto('/projects'); // Arahkan ke halaman daftar proyek
+			goto('/projects');
 		} catch (err) {
-			// Ganti console.error dan alert dengan handleError
 			handleError(err, 'mengarsipkan proyek');
 		}
 	}
@@ -224,37 +255,38 @@
 	async function handleAddTask(event: CustomEvent) {
 		const { title, description } = event.detail;
 
-		if (!$session || !$session.user) {
-			const error = new Error('login dulu untuk menambah tugas');
-			handleError(error, 'menambahkan tugas');
+		if (!$session?.user) {
+			handleError(new Error('Silakan login terlebih dahulu'), 'menambahkan tugas');
 			return;
 		}
 
 		if (!selectedColumnId) {
-			const error = new Error('Gagal menambah task: Kolom tujuan tidak ditemukan.');
-			handleError(error, 'menambahkan tugas');
+			handleError(new Error('Kolom tujuan tidak ditemukan'), 'menambahkan tugas');
 			return;
 		}
 
-		const { data, error: insertError } = await supabase.from('tasks').insert({
-			title: title,
-			description: description,
-			column_id: selectedColumnId,
-			assigned_to: $session.user.id,
-			created_by: $session.user.id,
-			order: 0
-		});
+		try {
+			const taskData = {
+				title,
+				description,
+				column_id: selectedColumnId,
+				assigned_to: $session.user.id,
+				created_by: $session.user.id,
+				project_id: projectId,
+				order: 0
+			};
 
-		if (insertError) {
-			console.error('Error adding new task:', insertError);
-			const error = new Error('Gagal menambahkan tugas.');
-			handleError(error, 'menambahkan tugas');
-		} else {
-			console.log('Task added successfully:', data);
-			await loadProjectData(projectId); // Reload data setelah task ditambahkan
+			const newTask = await tambahTask(taskData);
+			console.log('Task added successfully:', newTask);
+
+			// The real-time listener will handle the UI update
+			toast.success('Tugas berhasil ditambahkan!');
+		} catch (err) {
+			handleError(err, 'menambahkan tugas');
+		} finally {
+			isModalOpen = false;
+			selectedColumnId = undefined;
 		}
-		isModalOpen = false;
-		selectedColumnId = undefined;
 	}
 
 	function openEditModal(task: any) {
@@ -265,19 +297,18 @@
 	async function handleEditTask(event: CustomEvent) {
 		const { id, title, description, assigned_to, priority, due_date } = event.detail;
 
-		const { error: updateError } = await supabase
-			.from('tasks')
-			.update({ title, description, assigned_to, priority, due_date })
-			.eq('id', id);
+		try {
+			const updates = { title, description, assigned_to, priority, due_date };
+			const updatedTask = await editTask(id, updates);
+			console.log('Task updated successfully:', updatedTask);
 
-		if (updateError) {
-			console.error('Error updating task:', updateError.message);
-			const error = new Error('Gagal mengedit tugas.');
-			handleError(error, 'menambahkan tugas');
-		} else {
-			console.log('Task updated successfully:', { id, title, description, assigned_to });
-			toast('Tugas di‐update!');
-			await loadProjectData(projectId);
+			// The real-time listener will handle the UI update
+			toast.success('Tugas berhasil diperbarui!');
+		} catch (err) {
+			handleError(err, 'mengedit tugas');
+		} finally {
+			isEditModalOpen = false;
+			selectedTask = null;
 		}
 	}
 
@@ -285,123 +316,43 @@
 		const confirmed = confirm('Apakah kamu yakin ingin menghapus tugas ini?');
 		if (!confirmed) return;
 
-		const { error: deleteError } = await supabase.from('tasks').delete().eq('id', taskId);
-
-		if (deleteError) {
-			handleError(deleteError, 'menghapus tugas');
-		} else {
-			toast('Tugas berhasil dihapus!');
-			await loadProjectData(projectId);
+		try {
+			await hapusTask(taskId);
+			// The real-time listener will handle the UI update
+			toast.success('Tugas berhasil dihapus!');
+		} catch (err) {
+			handleError(err, 'menghapus tugas');
 		}
 	}
 
 	async function updateTaskColumn(taskId: string, newColumnId: string) {
-		const { error } = await supabase
-			.from('tasks')
-			.update({ column_id: newColumnId })
-			.eq('id', taskId);
+		try {
+			const updatedTask = await pindahTask(taskId, newColumnId);
 
-		if (error) {
-			console.error('Error updating task:', error.message);
-			handleError(error, 'gagal mengupdate tugas');
-		} else {
-			// --- START OF CHANGES ---
-			// 1. Update the local 'tasks' array directly
+			// Update local state immediately for better UX
 			tasks = tasks.map((task) =>
 				task.id === taskId ? { ...task, column_id: newColumnId } : task
 			);
-
-			// 2. Update the global store (if you want other components to react)
 			$allTasks = tasks;
 
-			// 3. Display appropriate alerts based on the new column
+			// Show appropriate celebration based on new column
 			const newColName = columns.find((c) => c.id === newColumnId)?.name.toLowerCase();
 			if (newColName === 'in progress') {
-				celebratoryToast('Semangat mengerjakan! 🥳');
+				celebratoryToast('Selamat Bekerja!\nGanbatte!🥳');
 			} else if (newColName === 'done') {
-				celebratoryToast('Yeay, tugas selesai! 🎉');
+				celebratoryToast('Yeay, tugas Kamu selesai!\nJangan lupa istirahat sejanak ya🎉');
 			} else {
-				toast('Tugas di‐update!');
+				toast.success('Tugas berhasil dipindahkan!');
 			}
+		} catch (err) {
+			handleError(err, 'memindahkan tugas');
 		}
 	}
 
-	// Real-time listeners
+	// Cleanup on destroy
 	onMount(() => {
-		// Task Channel dengan optimasi incremental updates
-		const taskChannel = supabase.channel('public:tasks');
-		taskChannel
-			.on(
-				'postgres_changes',
-				{ event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` },
-				(payload) => {
-					console.log('DEBUG: Real-time task change:', payload);
-
-					// Update incremental berdasarkan jenis event
-					const { eventType, new: newRecord, old: oldRecord } = payload;
-
-					if (eventType === 'INSERT') {
-						// Tambahkan task baru ke array
-						tasks = [...tasks, newRecord];
-						$allTasks = tasks;
-					} else if (eventType === 'UPDATE') {
-						// Update task yang sudah ada
-						tasks = tasks.map((t) => (t.id === newRecord.id ? newRecord : t));
-						$allTasks = tasks;
-					} else if (eventType === 'DELETE') {
-						// Hapus task dari array
-						tasks = tasks.filter((t) => t.id !== oldRecord.id);
-						$allTasks = tasks;
-					}
-
-					// Reorganisasi jika diperlukan
-					// Jika Anda memiliki fungsi untuk mengelompokkan tugas berdasarkan kolom
-					if (typeof organizeTasksByColumns === 'function') {
-						organizeTasksByColumns();
-					}
-				}
-			)
-			.subscribe();
-
-		// Column Channel dengan optimasi incremental updates
-		const columnChannel = supabase.channel('public:columns');
-		columnChannel
-			.on(
-				'postgres_changes',
-				{ event: '*', schema: 'public', table: 'columns', filter: `project_id=eq.${projectId}` },
-				(payload) => {
-					console.log('DEBUG: Real-time column change:', payload);
-
-					// Update incremental berdasarkan jenis event
-					const { eventType, new: newRecord, old: oldRecord } = payload;
-
-					if (eventType === 'INSERT') {
-						// Tambahkan kolom baru ke array
-						columns = [...columns, newRecord];
-					} else if (eventType === 'UPDATE') {
-						// Update kolom yang sudah ada
-						columns = columns.map((c) => (c.id === newRecord.id ? newRecord : c));
-					} else if (eventType === 'DELETE') {
-						// Hapus kolom dari array
-						columns = columns.filter((c) => c.id !== oldRecord.id);
-
-						// Opsional: Jika kolom dihapus, Anda mungkin perlu menangani tugas-tugas
-						// yang dimiliki oleh kolom tersebut (pindahkan atau hapus)
-						tasks = tasks.filter((t) => t.column_id !== oldRecord.id);
-						$allTasks = tasks;
-					}
-
-					// Reorganisasi jika diperlukan
-					if (typeof organizeTasksByColumns === 'function') {
-						organizeTasksByColumns();
-					}
-				}
-			)
-			.subscribe();
-
 		return () => {
-			supabase.removeChannel(taskChannel);
-			supabase.removeChannel(columnChannel);
+			cleanupListeners();
 		};
 	});
 </script>
@@ -423,10 +374,10 @@
 			{#if $selectedProject?.status}
 				<span
 					class="inline-block px-3 py-1 text-xs font-semibold rounded-full
-      {$selectedProject.status === 'active' ? 'bg-green-100 text-green-800' : ''}
-      {$selectedProject.status === 'on-hold' ? 'bg-yellow-100 text-yellow-800' : ''}
-      {$selectedProject.status === 'completed' ? 'bg-blue-100 text-blue-800' : ''}
-      {$selectedProject.status === 'archived' ? 'bg-gray-200 text-gray-600' : ''}"
+					{$selectedProject.status === 'active' ? 'bg-green-100 text-green-800' : ''}
+					{$selectedProject.status === 'on-hold' ? 'bg-yellow-100 text-yellow-800' : ''}
+					{$selectedProject.status === 'completed' ? 'bg-blue-100 text-blue-800' : ''}
+					{$selectedProject.status === 'archived' ? 'bg-gray-200 text-gray-600' : ''}"
 				>
 					{$selectedProject.status.replace('-', ' ').toUpperCase()}
 				</span>
@@ -451,7 +402,7 @@
 					Edit Proyek
 				</button>
 				<button
-					on:click={archiveProject}
+					on:click={handleArchiveProject}
 					class="bg-gray-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-gray-700 transition-colors whitespace-nowrap"
 				>
 					Arsipkan Proyek
@@ -468,10 +419,7 @@
 				<Column
 					{column}
 					allColumns={columns}
-					tasks={tasks.filter(
-						(t) =>
-							t.column_id === column.id && t.title.toLowerCase().includes(searchQuery.toLowerCase())
-					)}
+					tasks={filteredTasks.filter((t) => t.column_id === column.id)}
 					on:edit={(e) => openEditModal(e.detail)}
 					on:delete={(e) => deleteTask(e.detail)}
 					on:move={handleMove}
