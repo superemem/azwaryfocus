@@ -89,13 +89,18 @@
 		totalElapsedTime = 0;
 	}
 
+	export function resetTimerFromParent() {
+		resetSession();
+		switchMode();
+	}
+
+	// Modifikasi completeSession untuk tidak auto-reset
 	function completeSession() {
 		clearInterval(intervalId!);
 		intervalId = null;
 		isRunning = false;
 		playAlarm();
 
-		// Calculate actual duration in milliseconds
 		const actualDurationMs = totalElapsedTime * 1000;
 		const wasCompleted = currentMode === 'work' && timeRemaining === 0;
 
@@ -104,9 +109,6 @@
 			duration: actualDurationMs,
 			completed: wasCompleted
 		});
-
-		resetSession();
-		switchMode();
 	}
 
 	function switchMode() {
@@ -162,7 +164,7 @@
 		>Istirahat 15m</button
 	>
 </div>
-<audio bind:this={audio} src="/notification.mp3" preload="auto" />
+<audio bind:this={audio} src="/victory.mp3" preload="auto" />
 
 <slot name="dailySessions" />
 <slot name="sessionDots" />

@@ -124,12 +124,22 @@
 	}
 
 	function handleSessionComplete(e: CustomEvent) {
+		console.log('🎯 Session complete event received:', e.detail);
+
 		const { mode, duration, completed } = e.detail;
-		if (mode !== 'work') return;
+
+		// Only handle work sessions
+		if (mode !== 'work') {
+			console.log('⏭️ Skipping non-work session');
+			// For break sessions, just reset the timer
+			timerRef.resetTimerFromParent();
+			return;
+		}
 
 		// Update current session duration from timer
 		if (currentSession) {
 			currentSession.duration = duration;
+			console.log('⏱️ Updated session duration:', duration);
 		}
 
 		const session = endSession(completed ? 'completed' : 'interrupted');
@@ -413,4 +423,4 @@
 	</div>
 </div>
 
-<audio bind:this={completeAudio} src="/notification.mp3" preload="auto" />
+<audio bind:this={completeAudio} src="/victory.mp3" preload="auto" />
