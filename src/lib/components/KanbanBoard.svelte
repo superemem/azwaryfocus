@@ -37,6 +37,7 @@
 	let isEditProjectModalOpen = false;
 	let selectedTask: any = null;
 	let currentProjectId: string | null = null;
+	let columns = [];
 
 	// Update global stores when project changes
 	$: if (project) {
@@ -287,7 +288,7 @@
 				<Column
 					{column}
 					allColumns={columns}
-					tasks={$filteredTasksStore.filter((t) => t.column_id === column.id)}
+					tasks={($filteredTasksStore ?? []).filter((t) => t.column_id === column.id)}
 					on:edit={(e) => openEditTaskModal(e.detail)}
 					on:delete={(e) => handleDeleteTask(e.detail)}
 					on:move={handleMoveTask}

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { session, userProfile } from '$lib/stores/authStore'; // <-- IMPORT userProfile di sini juga
+	import { session, userProfile } from '$lib/stores/authStore';
 	import toast from 'svelte-5-french-toast';
 
 	export let isOpen: boolean;
 	export let task: any = null;
-	export let allProfiles: any[] = []; // Ini adalah semua profil yang di-fetch dari parent
+	export let allProfiles: any[] = [];
 
 	let localTitle = '';
 	let localDescription = '';
@@ -15,41 +15,54 @@
 
 	const dispatch = createEventDispatcher();
 
-	// Ambil user ID dari session
 	$: currentUserId = $session?.user?.id;
-	// Ambil role dari userProfile (ini yang benar)
-	$: currentUserRole = $userProfile?.role || 'staff'; // Default ke 'staff' jika belum terload/null
+	$: currentUserRole = $userProfile?.role || 'staff';
 
-	// Filter allProfiles untuk mendapatkan daftar user yang bisa di-assign oleh supervisor
-	// Jika ada Supervisor, dia bisa assign ke dirinya sendiri atau ke semua staff.
-	// Jika staff, daftar ini tidak akan digunakan untuk select.
-	$: assignableUsers = allProfiles.filter(
-		(profile) => profile.id !== currentUserId || currentUserRole === 'supervisor'
-	);
+	// DEBUG: Log untuk melihat data yang masuk
+	$: {
+		console.log('DEBUG - allProfiles:', allProfiles);
+		console.log('DEBUG - currentUserId:', currentUserId);
+		console.log('DEBUG - currentUserRole:', currentUserRole);
+	}
 
-	// Load data awal dari task. Gunakan currentUserId untuk staff default assigned_to.
+	// Perbaikan: Gunakan assignableUsers yang sudah dibuat
+	$: assignableUsers = allProfiles.filter((profile) => {
+		// Pastikan profile memiliki id (atau user_id) dan username
+		const profileId = profile.id || profile.user_id;
+		if (!profileId || !profile.username) {
+			console.log('DEBUG - Profile missing data:', profile);
+			return false;
+		}
+
+		// Supervisor bisa assign ke siapa saja (termasuk dirinya sendiri)
+		if (currentUserRole === 'supervisor') {
+			return true;
+		}
+
+		// Staff hanya bisa assign ke dirinya sendiri (tapi ini tidak akan digunakan karena staff tidak bisa edit assigned_to)
+		return profileId === currentUserId;
+	});
+
+	// DEBUG: Log assignableUsers
+	$: {
+		console.log('DEBUG - assignableUsers:', assignableUsers);
+	}
+
 	$: if (task && currentUserId) {
-		// Pastikan currentUserId sudah tersedia
 		localTitle = task.title;
 		localDescription = task.description || '';
 
-		// Jika task belum di-assign atau di-assign ke user yang tidak lagi ada, default ke user saat ini
-		// Jika user adalah staff, secara otomatis assigned_to dirinya sendiri
 		if (currentUserRole === 'staff') {
 			localAssignedTo = currentUserId;
 		} else {
-			// Supervisor
-			// Jika task sudah ada assigned_to, gunakan itu. Jika tidak, default ke null (unassigned)
-			// Atau jika supervisor ingin meng-assign ke dirinya sendiri, bisa juga
-			localAssignedTo = task.assigned_to || null; // Biarkan null jika belum di-assign
+			localAssignedTo = task.assigned_to || null;
 		}
 		localPriority = task.priority || 'Low';
 		localDueDate = task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : null;
 	} else if (!task) {
-		// Reset form saat task null (misal, saat modal ditutup atau dibuka untuk task baru)
 		localTitle = '';
 		localDescription = '';
-		localAssignedTo = currentUserId; // Default ke diri sendiri
+		localAssignedTo = currentUserId;
 		localPriority = 'Low';
 		localDueDate = null;
 	}
@@ -62,20 +75,17 @@
 
 		let finalAssignedTo = localAssignedTo;
 
-		// Logika untuk Staff: selalu tugaskan ke dirinya sendiri
 		if (currentUserRole === 'staff') {
 			finalAssignedTo = currentUserId;
 		}
-		// Logika untuk Supervisor: sudah ditangani oleh select,
-		// localAssignedTo sudah bisa null jika dipilih "Unassigned"
 
 		console.log('DEBUG (EditTaskModal): Saving task with assigned_to:', finalAssignedTo);
 
 		dispatch('submit', {
-			id: task.id, // ID task yang diedit
+			id: task.id,
 			title: localTitle,
 			description: localDescription,
-			assigned_to: finalAssignedTo, // Gunakan finalAssignedTo
+			assigned_to: finalAssignedTo,
 			priority: localPriority,
 			due_date: localDueDate
 		});
@@ -106,10 +116,23 @@
 				{#if currentUserRole === 'supervisor'}
 					<select id="assignedTo" bind:value={localAssignedTo}>
 						<option value={null}>Unassigned</option>
-						{#each allProfiles as profile (profile.id)}
-							<option value={profile.id}>{profile.username}</option>
+						<!-- Gunakan assignableUsers yang sudah difilter -->
+						{#each assignableUsers as profile (profile.id || profile.user_id)}
+							<option value={profile.id || profile.user_id}>{profile.username}</option>
 						{/each}
 					</select>
+
+					<!-- DEBUG: Tampilkan info untuk debugging -->
+					<div class="debug-info">
+						<p>
+							<small
+								>Debug: Total profiles: {allProfiles.length}, Assignable: {assignableUsers.length}</small
+							>
+						</p>
+						{#if assignableUsers.length === 0}
+							<p><small style="color: red;">No assignable users found!</small></p>
+						{/if}
+					</div>
 				{:else}
 					<p><strong>{$userProfile?.username || 'Kamu sendiri'}</strong></p>
 				{/if}
@@ -137,7 +160,6 @@
 {/if}
 
 <style>
-	/* Styles are the same as before */
 	.modal-backdrop {
 		position: fixed;
 		top: 0;
@@ -205,6 +227,13 @@
 		border-radius: 4px;
 		font-size: 0.9em;
 		color: #555;
+	}
+	.debug-info {
+		background-color: #fff3cd;
+		border: 1px solid #ffeaa7;
+		padding: 5px;
+		border-radius: 4px;
+		margin-bottom: 10px;
 	}
 	.modal-footer {
 		display: flex;

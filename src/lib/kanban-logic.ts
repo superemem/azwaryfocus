@@ -6,7 +6,6 @@ import {
 	editTask,
 	hapusTask,
 	pindahTask,
-	loadFullProjectData,
 	archiveProject,
 	type TaskData,
 	type TaskUpdateData
@@ -174,7 +173,8 @@ export class KanbanLogic {
 					const username = getProfileUsername(m.profiles);
 					const hasProfile = !!username;
 					const isNotLead = m.user_id !== projectData.created_by;
-					if (DEBUG) console.log(`🔍 Filtering member ${m.user_id}:`, { hasProfile, isNotLead, username });
+					if (DEBUG)
+						console.log(`🔍 Filtering member ${m.user_id}:`, { hasProfile, isNotLead, username });
 					return hasProfile && isNotLead;
 				})
 				.map((m) => getProfileUsername(m.profiles))
@@ -213,30 +213,29 @@ export class KanbanLogic {
 		this.updateState({ loading: true, error: null, projectId });
 
 		try {
-			const { project, columns, tasks, profiles } = await loadFullProjectData(projectId);
+			const { data, error } = await supabase.rpc('load_kanban_project', {
+				project_id: projectId
+			});
 
-			let membersData: ProjectMembersData = {
-				projectLead: 'Loading...',
-				teamMembers: []
-			};
-
-			try {
-				membersData = await this.loadProjectMembers(projectId);
-			} catch (memberError) {
-				if (DEBUG) console.warn('Failed to load project members, using defaults:', memberError);
-				membersData = {
-					projectLead: 'Error loading leader',
-					teamMembers: []
-				};
+			if (error || !data) {
+				throw error || new Error('RPC failed to load project');
 			}
 
+			const { project, columns, tasks, members, project_lead } = data;
+
+			// Extract unique team members (exclude lead)
+			const teamMembers = members
+				.filter((m: any) => m.username && m.username !== project_lead)
+				.map((m: any) => m.username);
+
+			// Update state
 			this.updateState({
 				project,
 				columns,
 				tasks,
-				profiles, // now ProfileData[]
-				projectLead: membersData.projectLead,
-				teamMembers: membersData.teamMembers,
+				profiles: members,
+				projectLead: project_lead,
+				teamMembers,
 				loading: false
 			});
 
@@ -362,7 +361,12 @@ export class KanbanLogic {
 
 			// Ensure all required fields are present
 			const requiredFields: (keyof Omit<TaskData, 'project_id'>)[] = [
-				'title', 'description', 'column_id', 'assigned_to', 'created_by', 'order'
+				'title',
+				'description',
+				'column_id',
+				'assigned_to',
+				'created_by',
+				'order'
 			];
 			for (const field of requiredFields) {
 				if (!(field in taskData)) {
