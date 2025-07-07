@@ -8,6 +8,8 @@
 	let password = '';
 	let loading = false;
 	let isSigningUp = false;
+	let isResetting = false;
+	let showResetForm = false;
 
 	async function handleLogin() {
 		loading = true;
@@ -71,6 +73,32 @@
 		return true;
 	}
 
+	async function handleResetPassword() {
+		if (!email.trim()) {
+			toast.error('Masukkan email terlebih dahulu');
+			return;
+		}
+
+		isResetting = true;
+
+		try {
+			const { error } = await supabase.auth.resetPasswordForEmail(email, {
+				redirectTo: `${window.location.origin}/reset-password`
+			});
+
+			if (error) {
+				handleError(error, 'reset password');
+			} else {
+				toast.success('Link reset password telah dikirim ke email kamu!');
+				showResetForm = false;
+			}
+		} catch (err) {
+			handleError(err, 'reset password');
+		} finally {
+			isResetting = false;
+		}
+	}
+
 	function handleError(error: any, context: string) {
 		console.error(`Error during ${context}:`, error);
 
@@ -102,6 +130,31 @@
 
 <div class="min-h-screen flex items-center justify-center bg-gray-900 p-6">
 	<div class="w-full max-w-md bg-gray-800 rounded-2xl shadow-2xl p-10 space-y-8">
+		{#if showResetForm}
+			<div class="bg-gray-700 p-4 rounded-lg">
+				<h3 class="text-white font-medium mb-2">Reset Password</h3>
+				<p class="text-gray-300 text-sm mb-4">
+					Masukkan email kamu, kami akan kirim link reset password
+				</p>
+
+				<div class="flex gap-2">
+					<button
+						on:click={handleResetPassword}
+						disabled={isResetting}
+						class="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+					>
+						{isResetting ? 'Mengirim...' : 'Kirim Link'}
+					</button>
+
+					<button
+						on:click={() => (showResetForm = false)}
+						class="px-4 py-2 text-gray-400 hover:text-white"
+					>
+						Batal
+					</button>
+				</div>
+			</div>
+		{/if}
 		<h2 class="text-4xl font-bold text-center text-white">
 			{isSigningUp ? 'Daftar Akun Baru' : 'Masuk ke Kanban'}
 		</h2>
@@ -146,6 +199,14 @@
 		</form>
 
 		<div class="text-center">
+			{#if !showResetForm}
+				<button
+					on:click={() => (showResetForm = true)}
+					class="text-blue-400 hover:underline text-sm"
+				>
+					Lupa Password?
+				</button>
+			{/if}
 			<button
 				on:click={() => (isSigningUp = !isSigningUp)}
 				class="text-blue-400 hover:underline transition-colors text-sm"

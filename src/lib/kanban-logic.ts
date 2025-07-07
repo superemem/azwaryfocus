@@ -13,16 +13,19 @@ import {
 } from '$lib/task-service';
 import { notificationService } from '$lib/notification-service';
 import { RealtimeManager, type RealtimeCallbacks } from '$lib/realtime-service';
+import { supabase } from '$lib/supabase';
 
 export interface KanbanState {
 	projectId: string | null;
 	project: any | null;
 	columns: any[];
 	tasks: any[];
-	profiles: any[];
+	profiles: string[];
 	loading: boolean;
 	error: string | null;
 	searchQuery: string;
+	projectLead: string | null;
+	teamMembers: string[];
 }
 
 export interface KanbanStats {
@@ -31,6 +34,11 @@ export interface KanbanStats {
 	doneCount: number;
 	totalTasks: number;
 	progressPercent: number;
+}
+
+export interface ProjectMembersData {
+	projectLead: string;
+	teamMembers: string[];
 }
 
 export class KanbanLogic {
@@ -46,7 +54,9 @@ export class KanbanLogic {
 			profiles: [],
 			loading: false,
 			error: null,
-			searchQuery: ''
+			searchQuery: '',
+			projectLead: null,
+			teamMembers: []
 		});
 	}
 
@@ -97,6 +107,59 @@ export class KanbanLogic {
 		this.state.update((current) => ({ ...current, ...updates }));
 	}
 
+	// Load project members data - FIXED VERSION
+	async loadProjectMembers(projectId: string): Promise<ProjectMembersData> {
+		try {
+			console.log('Loading project members for project:', projectId);
+
+			// Ambil data project
+			const { data: projectData, error: projectError } = await supabase
+				.from('projects')
+				.select('created_by, profiles!projects_created_by_fkey(username)')
+				.eq('id', projectId)
+				.single();
+
+			if (projectError || !projectData) {
+				console.error('Error fetching project data:', projectError);
+				throw projectError;
+			}
+
+			console.log('Project data:', projectData);
+
+			// Ambil project members
+			const { data: projectMembers, error: membersError } = await supabase
+				.from('project_members')
+				.select('user_id, profiles!project_members_user_id_fkey(username)')
+				.eq('project_id', projectId);
+
+			if (membersError) {
+				console.warn('Error fetching project members:', membersError);
+			}
+
+			console.log('Project members data:', projectMembers);
+
+			// Ambil nama lead
+			const projectLead = projectData.profiles?.username || 'Unknown Project Lead';
+
+			// Ambil nama anggota tim
+			const teamMembers = (projectMembers || [])
+				.filter((m) => m.profiles)
+				.map((m) => m.profiles.username || 'Tanpa Nama')
+				.filter((name) => name && name !== projectLead);
+
+			return {
+				projectLead,
+				teamMembers: [...new Set(teamMembers)]
+			};
+		} catch (error) {
+			console.error('Error loading project members:', error);
+			return {
+				projectLead: 'Error loading leader',
+				teamMembers: []
+			};
+		}
+	}
+
 	// Load project data
 	async loadProject(projectId: string) {
 		if (!projectId) {
@@ -113,13 +176,32 @@ export class KanbanLogic {
 		this.updateState({ loading: true, error: null, projectId });
 
 		try {
+			// Load project data
 			const { project, columns, tasks, profiles } = await loadFullProjectData(projectId);
+
+			// Load project members - but don't let it fail the entire load
+			let membersData: ProjectMembersData = {
+				projectLead: 'Loading...',
+				teamMembers: []
+			};
+
+			try {
+				membersData = await this.loadProjectMembers(projectId);
+			} catch (memberError) {
+				console.warn('Failed to load project members, using defaults:', memberError);
+				membersData = {
+					projectLead: 'Error loading leader',
+					teamMembers: []
+				};
+			}
 
 			this.updateState({
 				project,
 				columns,
 				tasks,
 				profiles,
+				projectLead: membersData.projectLead,
+				teamMembers: membersData.teamMembers,
 				loading: false
 			});
 
@@ -129,6 +211,8 @@ export class KanbanLogic {
 			}
 
 			console.log('Project loaded successfully:', project?.name);
+			console.log('Project lead:', membersData.projectLead);
+			console.log('Team members:', membersData.teamMembers);
 		} catch (error) {
 			console.error('Error loading project:', error);
 			const errorMessage = error instanceof Error ? error.message : 'Gagal memuat data project';
@@ -154,7 +238,9 @@ export class KanbanLogic {
 			tasks: [],
 			profiles: [],
 			loading: false,
-			error: null
+			error: null,
+			projectLead: null,
+			teamMembers: []
 		});
 	}
 

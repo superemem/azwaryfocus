@@ -15,8 +15,9 @@
 	import { handleError } from '$lib/errorHandler';
 
 	export let projectId: string;
-	export let projectLead;
-	export let teamMembers: string[];
+	// Remove these props since we're getting data from store now
+	// export let projectLead;
+	// export let teamMembers: string[];
 
 	// Initialize Kanban logic
 	const kanban = new KanbanLogic();
@@ -27,7 +28,8 @@
 	const filteredTasksStore = kanban.filteredTasks;
 
 	// Extract state properties for easier access
-	$: ({ project, columns, tasks, profiles, loading, error, searchQuery } = $kanbanStore);
+	$: ({ project, columns, tasks, profiles, loading, error, searchQuery, projectLead, teamMembers } =
+		$kanbanStore);
 
 	// Modal states
 	let isAddModalOpen = false;
@@ -45,6 +47,12 @@
 	$: if (projectId && projectId !== currentProjectId) {
 		currentProjectId = projectId;
 		kanban.loadProject(projectId);
+	}
+
+	// Debug logs
+	$: if (projectLead !== null || teamMembers.length > 0) {
+		console.log('Project Lead:', projectLead);
+		console.log('Team Members:', teamMembers);
 	}
 
 	// Modal handlers
@@ -226,11 +234,12 @@
 				</button>
 			</div>
 		</div>
-		<!-- ✨ Tambahan: Project Leader & Team -->
+
+		<!-- ✨ Project Leader & Team - Updated to use store data -->
 		<div class="mt-4 space-y-1">
 			<p class="text-sm text-gray-700">
 				<span class="font-semibold">Project Leader:</span>
-				{projectLead}
+				{projectLead || 'Loading...'}
 			</p>
 			<p class="text-sm text-gray-700">
 				<span class="font-semibold">Project Team:</span>
@@ -239,11 +248,13 @@
 						<span>{member}{i < teamMembers.length - 1 ? ', ' : ''}</span>
 					{/each}
 				{:else}
-					<span class="italic text-gray-500">Belum ada anggota</span>
+					<span class="italic text-gray-500">
+						{projectLead ? 'Belum ada anggota tim' : 'Loading...'}
+					</span>
 				{/if}
 			</p>
 		</div>
-		<!-- ✨ Selesai tambahan -->
+		<!-- ✨ End of Project Leader & Team -->
 
 		{#if project?.description}
 			<p class="text-gray-600 text-lg mb-6">{project.description}</p>
