@@ -128,19 +128,19 @@
 
 		const { mode, duration, completed } = e.detail;
 
-		// Only handle work sessions
 		if (mode !== 'work') {
 			console.log('⏭️ Skipping non-work session');
-			// For break sessions, just reset the timer
 			timerRef.resetTimerFromParent();
 			return;
 		}
 
-		// Update current session duration from timer
-		if (currentSession) {
-			currentSession.duration = duration;
-			console.log('⏱️ Updated session duration:', duration);
+		if (!currentSession) {
+			console.warn('⚠️ currentSession kosong saat sessionComplete. Session tidak bisa disimpan.');
+			return;
 		}
+
+		currentSession.duration = duration;
+		console.log('⏱️ Updated session duration:', duration);
 
 		const session = endSession(completed ? 'completed' : 'interrupted');
 		if (!session) return;

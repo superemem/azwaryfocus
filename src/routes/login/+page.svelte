@@ -12,38 +12,91 @@
 	async function handleLogin() {
 		loading = true;
 
-		const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+		try {
+			const { data, error } = await supabase.auth.signInWithPassword({
+				email: email.trim(),
+				password
+			});
 
-		if (error) {
-			handleError(error, 'login');
+			if (error) {
+				handleError(error, 'login');
+				return;
+			}
+
+			if (data.session) {
+				session.set(data.session);
+				toast.success('Berhasil masuk!');
+				goto('/profile');
+			}
+			if (!validateForm()) return;
+		} catch (err) {
+			handleError(err, 'login');
+		} finally {
 			loading = false;
-			return;
 		}
-
-		// Tunggu session client terbentuk sebelum redirect
-		const MAX_WAIT = 2000;
-		const start = Date.now();
-
-		while (!data.session && Date.now() - start < MAX_WAIT) {
-			await new Promise((r) => setTimeout(r, 100));
-		}
-
-		session.set(data.session); // optional: sinkronkan ke store
-
-		loading = false;
-		goto('/profile'); // baru redirect
 	}
 
 	async function handleSignup() {
 		loading = true;
-		handleError(error, 'mendaftar');
-		loading = false;
+
+		const { data, error } = await supabase.auth.signUp({ email, password });
 
 		if (error) {
 			handleError(error, 'mendaftar');
 		} else {
-			toast('Cek email kamu untuk verifikasi!');
+			toast.success('Cek email kamu untuk verifikasi!');
+			isSigningUp = false;
 		}
+		if (!validateForm()) return;
+
+		loading = true;
+	}
+
+	function validateForm() {
+		if (!email.trim()) {
+			toast.error('Email harus diisi');
+			return false;
+		}
+
+		if (!email.includes('@')) {
+			toast.error('Format email tidak valid');
+			return false;
+		}
+
+		if (password.length < 6) {
+			toast.error('Password minimal 6 karakter');
+			return false;
+		}
+
+		return true;
+	}
+
+	function handleError(error: any, context: string) {
+		console.error(`Error during ${context}:`, error);
+
+		// Handle specific Supabase auth errors
+		if (error.message === 'Invalid login credentials') {
+			toast.error('Email atau password salah');
+		} else if (error.message === 'Email not confirmed') {
+			toast.error('Silakan cek email untuk verifikasi akun');
+		} else if (error.message === 'Too many requests') {
+			toast.error('Terlalu banyak percobaan. Coba lagi nanti');
+		} else {
+			toast.error(error.message || `Gagal ${context}`);
+		}
+	}
+
+	// Perbaiki session polling
+	async function waitForSession(data: any) {
+		const MAX_WAIT = 5000; // Increase timeout
+		const POLL_INTERVAL = 200;
+
+		for (let i = 0; i < MAX_WAIT / POLL_INTERVAL; i++) {
+			if (data.session) return data.session;
+			await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+		}
+
+		throw new Error('Session timeout');
 	}
 </script>
 
