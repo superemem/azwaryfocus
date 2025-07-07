@@ -2,7 +2,7 @@
 import { supabase } from '$lib/supabase';
 
 // Interface untuk data task
-interface TaskData {
+export interface TaskData {
 	title: string;
 	description: string;
 	column_id: string;
@@ -15,7 +15,7 @@ interface TaskData {
 }
 
 // Interface untuk update task
-interface TaskUpdateData {
+export interface TaskUpdateData {
 	title?: string;
 	description?: string;
 	column_id?: string;

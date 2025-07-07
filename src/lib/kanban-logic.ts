@@ -15,12 +15,25 @@ import { notificationService } from '$lib/notification-service';
 import { RealtimeManager, type RealtimeCallbacks } from '$lib/realtime-service';
 import { supabase } from '$lib/supabase';
 
+// Column name constants
+const COLUMN_TODO = 'to do';
+const COLUMN_IN_PROGRESS = 'in progress';
+const COLUMN_DONE = 'done';
+
+// Debug flag for logging
+const DEBUG = false;
+
+export interface ProfileData {
+	id: string;
+	username: string;
+}
+
 export interface KanbanState {
 	projectId: string | null;
 	project: any | null;
 	columns: any[];
 	tasks: any[];
-	profiles: string[];
+	profiles: ProfileData[];
 	loading: boolean;
 	error: string | null;
 	searchQuery: string;
@@ -107,52 +120,75 @@ export class KanbanLogic {
 		this.state.update((current) => ({ ...current, ...updates }));
 	}
 
-	// Load project members data - FIXED VERSION
+	/**
+	 * Loads project members (lead and team) for a given projectId.
+	 * Handles Supabase join result structure.
+	 */
 	async loadProjectMembers(projectId: string): Promise<ProjectMembersData> {
 		try {
-			console.log('Loading project members for project:', projectId);
+			if (DEBUG) console.log('🔍 Loading project members for project:', projectId);
 
-			// Ambil data project
+			// Get project data with joined profile
 			const { data: projectData, error: projectError } = await supabase
 				.from('projects')
-				.select('created_by, profiles!projects_created_by_fkey(username)')
+				.select(`created_by, profiles!projects_created_by_fkey(username)`) // profiles is usually an object
 				.eq('id', projectId)
 				.single();
 
 			if (projectError || !projectData) {
-				console.error('Error fetching project data:', projectError);
+				if (DEBUG) console.error('❌ Error fetching project data:', projectError);
 				throw projectError;
 			}
 
-			console.log('Project data:', projectData);
+			if (DEBUG) console.log('✅ Project data loaded:', projectData);
 
-			// Ambil project members
+			// Get project members with joined profile
 			const { data: projectMembers, error: membersError } = await supabase
 				.from('project_members')
-				.select('user_id, profiles!project_members_user_id_fkey(username)')
+				.select(`user_id, profiles!project_members_user_id_fkey(username), created_at`)
 				.eq('project_id', projectId);
 
 			if (membersError) {
-				console.warn('Error fetching project members:', membersError);
+				if (DEBUG) console.warn('⚠️ Error fetching project members:', membersError);
 			}
 
-			console.log('Project members data:', projectMembers);
+			if (DEBUG) {
+				console.log('📋 Project members raw data:', projectMembers);
+				console.log('📋 Project members count:', projectMembers?.length || 0);
+			}
 
-			// Ambil nama lead
-			const projectLead = projectData.profiles?.username || 'Unknown Project Lead';
+			// Supabase join: profiles can be an array or object, normalize to object
+			const getProfileUsername = (profile: any) => {
+				if (!profile) return undefined;
+				if (Array.isArray(profile)) return profile[0]?.username;
+				return profile.username;
+			};
 
-			// Ambil nama anggota tim
+			// Project lead username
+			const projectLead = getProfileUsername(projectData.profiles) || 'Unknown Project Lead';
+			if (DEBUG) console.log('👑 Project Lead:', projectLead);
+
+			// Team members (exclude project lead)
 			const teamMembers = (projectMembers || [])
-				.filter((m) => m.profiles)
-				.map((m) => m.profiles.username || 'Tanpa Nama')
-				.filter((name) => name && name !== projectLead);
+				.filter((m) => {
+					const username = getProfileUsername(m.profiles);
+					const hasProfile = !!username;
+					const isNotLead = m.user_id !== projectData.created_by;
+					if (DEBUG) console.log(`🔍 Filtering member ${m.user_id}:`, { hasProfile, isNotLead, username });
+					return hasProfile && isNotLead;
+				})
+				.map((m) => getProfileUsername(m.profiles))
+				.filter((name) => name && name.trim() !== '');
+
+			const uniqueTeamMembers = [...new Set(teamMembers)];
+			if (DEBUG) console.log('✨ Unique team members:', uniqueTeamMembers);
 
 			return {
 				projectLead,
-				teamMembers: [...new Set(teamMembers)]
+				teamMembers: uniqueTeamMembers
 			};
 		} catch (error) {
-			console.error('Error loading project members:', error);
+			if (DEBUG) console.error('💥 Error loading project members:', error);
 			return {
 				projectLead: 'Error loading leader',
 				teamMembers: []
@@ -160,14 +196,15 @@ export class KanbanLogic {
 		}
 	}
 
-	// Load project data
+	/**
+	 * Loads all project data and members, updates state, and sets up realtime listeners.
+	 */
 	async loadProject(projectId: string) {
 		if (!projectId) {
 			this.resetProject();
 			return;
 		}
 
-		// Don't load if already loading the same project
 		const currentState = this.getCurrentState();
 		if (currentState.loading && currentState.projectId === projectId) {
 			return;
@@ -176,10 +213,8 @@ export class KanbanLogic {
 		this.updateState({ loading: true, error: null, projectId });
 
 		try {
-			// Load project data
 			const { project, columns, tasks, profiles } = await loadFullProjectData(projectId);
 
-			// Load project members - but don't let it fail the entire load
 			let membersData: ProjectMembersData = {
 				projectLead: 'Loading...',
 				teamMembers: []
@@ -188,7 +223,7 @@ export class KanbanLogic {
 			try {
 				membersData = await this.loadProjectMembers(projectId);
 			} catch (memberError) {
-				console.warn('Failed to load project members, using defaults:', memberError);
+				if (DEBUG) console.warn('Failed to load project members, using defaults:', memberError);
 				membersData = {
 					projectLead: 'Error loading leader',
 					teamMembers: []
@@ -199,22 +234,23 @@ export class KanbanLogic {
 				project,
 				columns,
 				tasks,
-				profiles,
+				profiles, // now ProfileData[]
 				projectLead: membersData.projectLead,
 				teamMembers: membersData.teamMembers,
 				loading: false
 			});
 
-			// Only setup realtime in browser
 			if (browser) {
 				this.setupRealtimeListeners(projectId);
 			}
 
-			console.log('Project loaded successfully:', project?.name);
-			console.log('Project lead:', membersData.projectLead);
-			console.log('Team members:', membersData.teamMembers);
+			if (DEBUG) {
+				console.log('Project loaded successfully:', project?.name);
+				console.log('Project lead:', membersData.projectLead);
+				console.log('Team members:', membersData.teamMembers);
+			}
 		} catch (error) {
-			console.error('Error loading project:', error);
+			if (DEBUG) console.error('Error loading project:', error);
 			const errorMessage = error instanceof Error ? error.message : 'Gagal memuat data project';
 
 			this.updateState({
@@ -313,7 +349,10 @@ export class KanbanLogic {
 		}
 	}
 
-	// Task operations
+	/**
+	 * Create a new task in the current project.
+	 * @param taskData Task data (without project_id)
+	 */
 	async createTask(taskData: Omit<TaskData, 'project_id'>) {
 		try {
 			const currentState = this.getCurrentState();
@@ -321,7 +360,17 @@ export class KanbanLogic {
 				throw new Error('Project ID tidak ditemukan');
 			}
 
-			const fullTaskData = {
+			// Ensure all required fields are present
+			const requiredFields: (keyof Omit<TaskData, 'project_id'>)[] = [
+				'title', 'description', 'column_id', 'assigned_to', 'created_by', 'order'
+			];
+			for (const field of requiredFields) {
+				if (!(field in taskData)) {
+					throw new Error(`Field ${field} is required for creating a task.`);
+				}
+			}
+
+			const fullTaskData: TaskData = {
 				...taskData,
 				project_id: currentState.projectId
 			};
@@ -334,7 +383,7 @@ export class KanbanLogic {
 
 			return newTask;
 		} catch (error) {
-			console.error('Error creating task:', error);
+			if (DEBUG) console.error('Error creating task:', error);
 			const errorMessage = error instanceof Error ? error.message : 'Gagal menambahkan tugas';
 
 			if (browser) {
