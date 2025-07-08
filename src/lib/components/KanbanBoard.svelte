@@ -37,7 +37,6 @@
 	let isEditProjectModalOpen = false;
 	let selectedTask: any = null;
 	let currentProjectId: string | null = null;
-	let columns = [];
 
 	// Update global stores when project changes
 	$: if (project) {
