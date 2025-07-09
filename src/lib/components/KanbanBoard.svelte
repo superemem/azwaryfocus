@@ -15,9 +15,6 @@
 	import { handleError } from '$lib/errorHandler';
 
 	export let projectId: string;
-	// Remove these props since we're getting data from store now
-	// export let projectLead;
-	// export let teamMembers: string[];
 
 	// Initialize Kanban logic
 	const kanban = new KanbanLogic();
@@ -37,23 +34,53 @@
 	let isEditProjectModalOpen = false;
 	let selectedTask: any = null;
 	let currentProjectId: string | null = null;
+	let isProjectLoading = false; // Add loading flag
 
-	// Update global stores when project changes
-	$: if (project) {
+	// FIXED: Use onMount to load initial project instead of reactive statement
+	onMount(() => {
+		if (projectId) {
+			loadProjectSafely(projectId);
+		}
+	});
+
+	// FIXED: Create a debounced project loader to prevent multiple calls
+	let loadProjectTimeout: NodeJS.Timeout;
+	async function loadProjectSafely(id: string) {
+		if (isProjectLoading) return; // Prevent multiple simultaneous calls
+
+		clearTimeout(loadProjectTimeout);
+		loadProjectTimeout = setTimeout(async () => {
+			if (id && id !== currentProjectId) {
+				isProjectLoading = true;
+				currentProjectId = id;
+				try {
+					await kanban.loadProject(id);
+				} catch (error) {
+					handleError(error, 'memuat proyek');
+				} finally {
+					isProjectLoading = false;
+				}
+			}
+		}, 100); // 100ms debounce
+	}
+
+	// FIXED: Watch for projectId changes with debounce
+	$: if (projectId && projectId !== currentProjectId && !isProjectLoading) {
+		loadProjectSafely(projectId);
+	}
+
+	// FIXED: Only update store when project actually changes
+	let lastProjectId: string | null = null;
+	$: if (project && project.id !== lastProjectId) {
+		lastProjectId = project.id;
 		selectedProject.set(project);
 	}
 
-	// Load project when projectId changes - Fixed to prevent infinite loop
-	$: if (projectId && projectId !== currentProjectId) {
-		currentProjectId = projectId;
-		kanban.loadProject(projectId);
-	}
-
-	// Debug logs
-	$: if (projectLead !== null || teamMembers.length > 0) {
-		console.log('Project Lead:', projectLead);
-		console.log('Team Members:', teamMembers);
-	}
+	// REMOVED: Debug logs to prevent unnecessary reactive calls
+	// $: if (projectLead !== null || teamMembers.length > 0) {
+	// 	console.log('Project Lead:', projectLead);
+	// 	console.log('Team Members:', teamMembers);
+	// }
 
 	// Modal handlers
 	function openAddTaskModal() {
@@ -163,26 +190,38 @@
 		}
 	}
 
+	// FIXED: Add debounce to prevent multiple reloads
+	let reloadTimeout: NodeJS.Timeout;
 	function handleProjectUpdated() {
-		if (projectId) {
-			kanban.loadProject(projectId);
-		}
+		clearTimeout(reloadTimeout);
+		reloadTimeout = setTimeout(() => {
+			if (projectId && !isProjectLoading) {
+				loadProjectSafely(projectId);
+			}
+		}, 200);
 	}
 
-	// Search handler
+	// FIXED: Debounce search to prevent excessive API calls
+	let searchTimeout: NodeJS.Timeout;
 	function handleSearchChange(event: Event) {
 		const target = event.target as HTMLInputElement;
-		kanban.updateSearchQuery(target.value);
+		clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(() => {
+			kanban.updateSearchQuery(target.value);
+		}, 300); // 300ms debounce for search
 	}
 
-	// Lifecycle
+	// Cleanup
 	onDestroy(() => {
+		clearTimeout(loadProjectTimeout);
+		clearTimeout(reloadTimeout);
+		clearTimeout(searchTimeout);
 		kanban.destroy();
 	});
 </script>
 
 <div class="min-h-full text-gray-900 font-sans">
-	{#if loading}
+	{#if loading || isProjectLoading}
 		<div class="flex justify-center items-center h-full">
 			<p class="text-lg font-semibold text-gray-600">Loading Kanban board...</p>
 		</div>
@@ -235,7 +274,7 @@
 			</div>
 		</div>
 
-		<!-- ✨ Project Leader & Team - Updated to use store data -->
+		<!-- Project Leader & Team -->
 		<div class="mt-4 space-y-1">
 			<p class="text-sm text-gray-700">
 				<span class="font-semibold">Project Leader:</span>
@@ -254,7 +293,6 @@
 				{/if}
 			</p>
 		</div>
-		<!-- ✨ End of Project Leader & Team -->
 
 		{#if project?.description}
 			<p class="text-gray-600 text-lg mb-6">{project.description}</p>

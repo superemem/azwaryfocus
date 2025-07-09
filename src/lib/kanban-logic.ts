@@ -56,6 +56,8 @@ export interface ProjectMembersData {
 export class KanbanLogic {
 	private state: Writable<KanbanState>;
 	private realtimeManager: RealtimeManager | null = null;
+	private currentProjectId: string | null = null; // Track current project
+	private loadingPromise: Promise<void> | null = null; // Prevent concurrent loads
 
 	constructor() {
 		this.state = writable({
@@ -198,6 +200,7 @@ export class KanbanLogic {
 
 	/**
 	 * Loads all project data and members, updates state, and sets up realtime listeners.
+	 * FIXED: Prevents duplicate loads and manages state properly
 	 */
 	async loadProject(projectId: string) {
 		if (!projectId) {
@@ -205,11 +208,34 @@ export class KanbanLogic {
 			return;
 		}
 
+		// FIXED: Prevent duplicate loads for same project
+		if (this.currentProjectId === projectId && this.loadingPromise) {
+			if (DEBUG) console.log('⏳ Project already loading, waiting for completion...');
+			return this.loadingPromise;
+		}
+
+		// FIXED: Check if project is already loaded
 		const currentState = this.getCurrentState();
-		if (currentState.loading && currentState.projectId === projectId) {
+		if (
+			currentState.projectId === projectId &&
+			currentState.project &&
+			currentState.columns.length > 0 &&
+			!currentState.loading
+		) {
+			if (DEBUG) console.log('✅ Project already loaded, skipping...');
 			return;
 		}
 
+		// FIXED: Store loading promise to prevent concurrent loads
+		this.loadingPromise = this.performLoadProject(projectId);
+		return this.loadingPromise;
+	}
+
+	/**
+	 * FIXED: Separated actual loading logic to manage promises properly
+	 */
+	private async performLoadProject(projectId: string): Promise<void> {
+		this.currentProjectId = projectId;
 		this.updateState({ loading: true, error: null, projectId });
 
 		try {
@@ -239,17 +265,18 @@ export class KanbanLogic {
 				loading: false
 			});
 
+			// FIXED: Setup realtime listeners only once per project
 			if (browser) {
 				this.setupRealtimeListeners(projectId);
 			}
 
 			if (DEBUG) {
-				console.log('Project loaded successfully:', project?.name);
-				console.log('Project lead:', membersData.projectLead);
-				console.log('Team members:', membersData.teamMembers);
+				console.log('✅ Project loaded successfully:', project?.name);
+				console.log('👑 Project lead:', project_lead);
+				console.log('👥 Team members:', teamMembers);
 			}
 		} catch (error) {
-			if (DEBUG) console.error('Error loading project:', error);
+			if (DEBUG) console.error('❌ Error loading project:', error);
 			const errorMessage = error instanceof Error ? error.message : 'Gagal memuat data project';
 
 			this.updateState({
@@ -260,12 +287,17 @@ export class KanbanLogic {
 			if (browser) {
 				notificationService.showError('Gagal memuat data project', errorMessage);
 			}
+		} finally {
+			// FIXED: Clear loading promise when done
+			this.loadingPromise = null;
 		}
 	}
 
 	// Reset project state
 	private resetProject() {
 		this.cleanupRealtimeListeners();
+		this.currentProjectId = null;
+		this.loadingPromise = null;
 		this.updateState({
 			projectId: null,
 			project: null,
@@ -279,9 +311,15 @@ export class KanbanLogic {
 		});
 	}
 
-	// Setup realtime listeners - only in browser
+	// FIXED: Setup realtime listeners - only once per project
 	private setupRealtimeListeners(projectId: string) {
 		if (!browser) return;
+
+		// FIXED: Don't setup if already listening to same project
+		if (this.realtimeManager && this.realtimeManager.projectId === projectId) {
+			if (DEBUG) console.log('🔄 Realtime listeners already setup for project:', projectId);
+			return;
+		}
 
 		this.cleanupRealtimeListeners();
 
@@ -331,6 +369,8 @@ export class KanbanLogic {
 
 			this.realtimeManager = new RealtimeManager(projectId, callbacks);
 			this.realtimeManager.setupAllListeners();
+
+			if (DEBUG) console.log('🔄 Realtime listeners setup for project:', projectId);
 		} catch (error) {
 			console.warn('Failed to setup realtime listeners:', error);
 		}
@@ -342,6 +382,7 @@ export class KanbanLogic {
 			try {
 				this.realtimeManager.cleanup();
 				this.realtimeManager = null;
+				if (DEBUG) console.log('🧹 Realtime listeners cleaned up');
 			} catch (error) {
 				console.warn('Failed to cleanup realtime listeners:', error);
 			}
@@ -451,11 +492,15 @@ export class KanbanLogic {
 				throw new Error('Task atau kolom tidak ditemukan');
 			}
 
-			// Optimistic update
-			this.state.update((current) => ({
-				...current,
-				tasks: current.tasks.map((t) => (t.id === taskId ? { ...t, column_id: newColumnId } : t))
-			}));
+			// FIXED: Less aggressive optimistic update - only if realtime is not working
+			const shouldOptimisticUpdate = !this.realtimeManager;
+
+			if (shouldOptimisticUpdate) {
+				this.state.update((current) => ({
+					...current,
+					tasks: current.tasks.map((t) => (t.id === taskId ? { ...t, column_id: newColumnId } : t))
+				}));
+			}
 
 			await pindahTask(taskId, newColumnId);
 
@@ -472,8 +517,14 @@ export class KanbanLogic {
 			}
 		} catch (error) {
 			console.error('Error moving task:', error);
-			// Revert optimistic update on error
-			await this.loadProject(this.getCurrentState().projectId!);
+
+			// FIXED: Only reload if we did optimistic update
+			if (!this.realtimeManager) {
+				const currentProjectId = this.getCurrentState().projectId;
+				if (currentProjectId) {
+					await this.loadProject(currentProjectId);
+				}
+			}
 
 			const errorMessage = error instanceof Error ? error.message : 'Gagal memindahkan tugas';
 
@@ -548,5 +599,7 @@ export class KanbanLogic {
 	// Cleanup
 	destroy() {
 		this.cleanupRealtimeListeners();
+		this.currentProjectId = null;
+		this.loadingPromise = null;
 	}
 }
