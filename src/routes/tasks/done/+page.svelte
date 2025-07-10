@@ -1,69 +1,50 @@
 <script lang="ts">
-	import { supabase } from '$lib/supabase';
-	import { session } from '$lib/stores/authStore';
-	import { onMount } from 'svelte';
+	import type { PageData } from './$types';
 
-	let tasks = [];
-	let loading = true;
-	let error: string | null = null; // Tambahkan variabel error untuk debugging
-
-	onMount(async () => {
-		if (!$session || !$session.user) {
-			error = 'Pengguna belum login.';
-			loading = false;
-			return;
-		}
-
-		const { data, error: fetchError } = await supabase
-			.from('tasks')
-			.select(
-				`
-                id,
-                title,
-                description,
-                priority,
-                due_date,
-                columns(name),
-                assignee_profile:profiles!tasks_assigned_to_fkey(username),
-                created_by_profile:profiles!tasks_created_by_fkey(username)
-                `
-			)
-			.eq('assigned_to', $session.user.id);
-
-		if (fetchError) {
-			console.error('Error fetching tasks for To Do page:', fetchError);
-			error = 'Gagal memuat tugas: ' + fetchError.message;
-		} else if (data) {
-			tasks = data.filter((task) => task.columns?.name?.toLowerCase() === 'done');
-			console.log('Fetched To Do tasks:', tasks); // Debugging
-		}
-
-		loading = false;
-	});
+	// 1. TERIMA DATA DARI SERVER
+	// Tidak ada lagi onMount, tidak ada lagi store, tidak ada lagi fetch.
+	let { data } = $props<PageData>();
 </script>
 
 <div class="p-8">
-	<h1 class="text-2xl font-bold mb-4">Tugas - To Do</h1>
+	<h1 class="text-4xl font-bold text-gray-800 mb-6">Tugas Selesai</h1>
 
-	{#if loading}
-		<p>Memuat data...</p>
-	{:else if error}
-		<p class="text-red-600">Error: {error}</p>
-	{:else if tasks.length === 0}
-		<p class="text-gray-500">Belum ada tugas yang selesai.</p>
+	{#if data.tasks.length === 0}
+		<div class="text-center py-16">
+			<p class="text-gray-500 text-lg">🎉 Selamat! Kamu tidak punya tugas yang sudah selesai.</p>
+			<p class="text-gray-400">Atau mungkin kamu belum menyelesaikan apa pun? 🤔</p>
+		</div>
 	{:else}
 		<ul class="space-y-4">
-			{#each tasks as task (task.id)}
-				<li class="bg-white shadow p-4 rounded border-l-4 border-blue-500">
-					<h2 class="font-semibold text-lg">{task.title}</h2>
-					<p class="text-sm text-gray-500">{task.description}</p>
-					<p class="text-sm text-gray-500">Prioritas: {task.priority || '-'}</p>
-					<p class="text-sm text-gray-500">
-						Deadline: {task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}
-					</p>
-					<p class="text-sm text-gray-500">
-						Ditugaskan oleh: {task.created_by_profile?.username || 'Tidak Ditentukan'}
-					</p>
+			{#each data.tasks as task (task.id)}
+				<li
+					class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500 transition hover:shadow-lg"
+				>
+					<h2 class="font-bold text-xl text-gray-800">{task.title}</h2>
+					{#if task.description}
+						<p class="text-gray-600 mt-1">{task.description}</p>
+					{/if}
+					<div class="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-500">
+						<span>
+							<strong>Prioritas:</strong>
+							<span
+								class="font-semibold"
+								class:text-red-600={task.priority === 'High'}
+								class:text-yellow-600={task.priority === 'Medium'}
+								class:text-blue-600={task.priority === 'Low'}
+							>
+								{task.priority || '-'}
+							</span>
+						</span>
+						<span>
+							<strong>Deadline:</strong>
+							{task.due_date ? new Date(task.due_date).toLocaleDateString('id-ID') : '-'}
+						</span>
+						<span>
+							<strong>Dibuat oleh:</strong>
+							{task.created_by_profile?.username || 'Tidak Diketahui'}
+						</span>
+					</div>
 				</li>
 			{/each}
 		</ul>

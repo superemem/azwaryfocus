@@ -1,196 +1,190 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
-	import { supabase } from '$lib/supabase';
-	import { session } from '$lib/stores/authStore';
+	import { createEventDispatcher } from 'svelte';
+	import type { Session } from '@supabase/supabase-js';
 	import toast from 'svelte-5-french-toast';
+
+	// 1. TERIMA PROPS, SEKARANG TERMASUK PROFILE UNTUK MENGETAHUI ROLE
+	let {
+		isOpen,
+		session,
+		profile, // <-- Prop baru untuk role
+		allProfiles
+	} = $props<{
+		isOpen: boolean;
+		session: Session | null;
+		profile: { role: string } | null; // <-- Tipe untuk prop baru
+		allProfiles: { id?: string; user_id?: string; username: string }[];
+	}>();
 
 	const dispatch = createEventDispatcher();
 
-	let title = '';
-	let description = '';
-	let dueDate = '';
-	let assignedTo = '';
-	let userRole = 'staff';
-	let userId = '';
-	let users: any[] = [];
+	// 2. STATE LOKAL MENGGUNAKAN RUNES
+	let title = $state('');
+	let description = $state('');
+	let dueDate = $state('');
+	let priority = $state('Medium');
+	let assignedTo = $state(session?.user?.id || '');
 
-	export let isOpen = false;
-
-	// Dapatkan session info
-	$: userRole = $session?.user?.role || 'staff';
-	$: userId = $session?.user?.id || '';
-
-	// Ambil semua user untuk opsi assign (hanya untuk supervisor)
-	onMount(async () => {
-		if (userRole === 'supervisor') {
-			const { data, error } = await supabase.from('profiles').select('id, username');
-
-			if (!error && data) {
-				users = data;
-			}
-		}
-	});
-
+	// 3. FUNGSI-FUNGSI YANG SUDAH DIRAPIKAN
 	function closeModal() {
 		dispatch('close');
 	}
 
 	function handleSubmit() {
 		if (!title.trim()) {
-			toast('Judul tidak boleh kosong!');
+			toast.error('Judul tugas tidak boleh kosong.');
+			return;
+		}
+		if (!session?.user) {
+			toast.error('Sesi tidak valid, silakan login ulang.');
 			return;
 		}
 
-		const taskData = {
+		// Kirim data tugas. `assignedTo` akan otomatis benar berdasarkan role.
+		dispatch('submit', {
 			title,
 			description,
 			due_date: dueDate || null,
-			assigned_to: userRole === 'supervisor' ? assignedTo : userId
-		};
+			priority,
+			assigned_to: assignedTo || session.user.id
+		});
 
-		dispatch('submit', taskData);
-
-		title = '';
-		description = '';
-		dueDate = '';
-		assignedTo = '';
 		closeModal();
 	}
 
-	$: if (!isOpen) {
-		title = '';
-		description = '';
-		dueDate = '';
-		assignedTo = '';
-	}
+	// Reactive: reset form saat modal ditutup
+	$effect(() => {
+		if (!isOpen) {
+			title = '';
+			description = '';
+			dueDate = '';
+			priority = 'Medium';
+			// Selalu reset ke diri sendiri saat ditutup
+			assignedTo = session?.user?.id || '';
+		} else {
+			// Saat dibuka, pastikan defaultnya adalah diri sendiri
+			assignedTo = session?.user?.id || '';
+		}
+	});
 </script>
 
 {#if isOpen}
-	<div class="modal-overlay" on:click|self={closeModal}>
-		<div class="modal-content">
-			<h3>Tambah Tugas Baru</h3>
-			<form on:submit|preventDefault={handleSubmit}>
-				<div class="form-group">
-					<label for="title">Judul Tugas</label>
-					<input id="title" type="text" bind:value={title} required />
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70"
+		on:click|self={closeModal}
+		role="dialog"
+		aria-modal="true"
+	>
+		<div
+			class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-lg"
+			on:click|stopPropagation
+			role="document"
+		>
+			<div class="flex justify-between items-center mb-6">
+				<h2 class="text-3xl font-bold text-white">Tambah Tugas Baru</h2>
+				<button
+					on:click={closeModal}
+					class="text-gray-400 hover:text-white"
+					aria-label="Tutup modal"
+				>
+					&times;
+				</button>
+			</div>
+
+			<form on:submit|preventDefault={handleSubmit} class="space-y-6">
+				<div>
+					<label for="title" class="block text-gray-300 font-semibold mb-2">Judul Tugas</label>
+					<input
+						id="title"
+						type="text"
+						bind:value={title}
+						class="w-full p-4 rounded-xl bg-gray-700 text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-600"
+						placeholder="Contoh: Desain halaman utama"
+						required
+					/>
 				</div>
 
-				<div class="form-group">
-					<label for="description">Deskripsi</label>
-					<textarea id="description" bind:value={description}></textarea>
+				<div>
+					<label for="description" class="block text-gray-300 font-semibold mb-2">Deskripsi</label>
+					<textarea
+						id="description"
+						bind:value={description}
+						rows="3"
+						class="w-full p-4 rounded-xl bg-gray-700 text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-600"
+						placeholder="Detail atau catatan untuk tugas ini"
+					></textarea>
 				</div>
 
-				<div class="form-group">
-					<label>Tugaskan kepada:</label>
-					{#if userRole === 'supervisor'}
-						<select bind:value={assignedTo} required>
-							<option value="" disabled>Pilih user</option>
-							{#each users as user}
-								<option value={user.id}>{user.username}</option>
-							{/each}
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+					<div>
+						<label for="assignedTo" class="block text-gray-300 font-semibold mb-2"
+							>Tugaskan Kepada</label
+						>
+						<!-- ======================================================= -->
+						<!-- BAGIAN YANG DIPERBAIKI DENGAN LOGIKA ROLE -->
+						<!-- ======================================================= -->
+						{#if profile?.role === 'supervisor'}
+							<!-- Tampilkan dropdown hanya untuk supervisor -->
+							<select
+								id="assignedTo"
+								bind:value={assignedTo}
+								class="w-full p-4 rounded-xl bg-gray-700 text-white border-gray-600 focus:ring-2 focus:ring-purple-600"
+							>
+								<option value={session?.user?.id}>Diri Sendiri (Supervisor)</option>
+								{#each allProfiles as p (p.id || p.user_id)}
+									{#if (p.id || p.user_id) !== session?.user?.id}
+										<option value={p.id || p.user_id}>{p.username}</option>
+									{/if}
+								{/each}
+							</select>
+						{:else}
+							<!-- Tampilkan teks statis untuk staff -->
+							<div class="w-full p-4 rounded-xl bg-gray-700 text-gray-400">Diri Sendiri</div>
+						{/if}
+					</div>
+
+					<div>
+						<label for="priority" class="block text-gray-300 font-semibold mb-2">Prioritas</label>
+						<select
+							id="priority"
+							bind:value={priority}
+							class="w-full p-4 rounded-xl bg-gray-700 text-white border-gray-600 focus:ring-2 focus:ring-purple-600"
+						>
+							<option value="Low">Rendah</option>
+							<option value="Medium">Sedang</option>
+							<option value="High">Tinggi</option>
 						</select>
-					{:else}
-						<p class="text-sm text-gray-700">Kamu sendiri</p>
-					{/if}
+					</div>
 				</div>
 
-				<div class="form-group">
-					<label for="dueDate">Tanggal Tenggat</label>
-					<input id="dueDate" type="date" bind:value={dueDate} />
+				<div>
+					<label for="dueDate" class="block text-gray-300 font-semibold mb-2"
+						>Tanggal Tenggat (Opsional)</label
+					>
+					<input
+						id="dueDate"
+						type="date"
+						bind:value={dueDate}
+						class="w-full p-4 rounded-xl bg-gray-700 text-white border-gray-600 focus:ring-2 focus:ring-purple-600"
+					/>
 				</div>
 
-				<div class="modal-actions">
-					<button type="submit" class="submit-btn">Simpan</button>
-					<button type="button" on:click={closeModal} class="cancel-btn">Batal</button>
+				<div class="flex justify-end space-x-4 pt-4">
+					<button
+						type="button"
+						on:click={closeModal}
+						class="px-6 py-3 bg-gray-600 text-white font-bold rounded-xl hover:bg-gray-500 transition-colors"
+					>
+						Batal
+					</button>
+					<button
+						type="submit"
+						class="px-6 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-colors"
+					>
+						Tambah Tugas
+					</button>
 				</div>
 			</form>
 		</div>
 	</div>
 {/if}
-
-<style>
-	.modal-overlay {
-		position: fixed;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 100%;
-		background-color: rgba(0, 0, 0, 0.7);
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		z-index: 1000;
-	}
-	.modal-content {
-		background-color: white;
-		padding: 30px;
-		border-radius: 8px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-		width: 90%;
-		max-width: 500px;
-		box-sizing: border-box;
-	}
-	h3 {
-		margin-top: 0;
-		margin-bottom: 25px;
-		font-size: 24px;
-		color: #333;
-		text-align: center;
-	}
-	.form-group {
-		margin-bottom: 20px;
-	}
-	.form-group label {
-		display: block;
-		margin-bottom: 8px;
-		font-weight: bold;
-		color: #555;
-	}
-	.form-group input,
-	.form-group textarea,
-	.form-group select {
-		width: 100%;
-		padding: 12px;
-		border: 1px solid #ddd;
-		border-radius: 5px;
-		font-size: 16px;
-		box-sizing: border-box;
-	}
-	.form-group textarea {
-		resize: vertical;
-		min-height: 100px;
-	}
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 10px;
-		margin-top: 30px;
-	}
-	.modal-actions button {
-		padding: 10px 20px;
-		border: none;
-		border-radius: 6px;
-		font-size: 16px;
-		font-weight: 600;
-		cursor: pointer;
-		transition:
-			background-color 0.2s ease,
-			transform 0.1s ease;
-	}
-	.submit-btn {
-		background-color: #22c55e;
-		color: white;
-	}
-	.submit-btn:hover {
-		background-color: #16a34a;
-		transform: translateY(-1px);
-	}
-	.cancel-btn {
-		background-color: #e5e7eb;
-		color: #374151;
-	}
-	.cancel-btn:hover {
-		background-color: #d1d5db;
-		transform: translateY(-1px);
-	}
-</style>

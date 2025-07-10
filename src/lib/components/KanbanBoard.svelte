@@ -1,356 +1,316 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { session } from '../stores/authStore';
-	import { selectedProjectId, selectedProject } from '../stores/projectStore';
 	import { goto } from '$app/navigation';
+	import { kanbanLogic } from '$lib/kanban-logic';
+	import type { Session } from '@supabase/supabase-js';
+	import toast from 'svelte-5-french-toast';
 
-	// Components
+	// Komponen Anak & Ikon
 	import AddTaskModal from '$lib/components/AddTaskModal.svelte';
 	import EditTaskModal from '$lib/components/EditTaskModal.svelte';
 	import EditProjectModal from '$lib/components/EditProjectModal.svelte';
 	import Column from '$lib/components/Column.svelte';
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
-	// Services - Fixed import path
-	import { KanbanLogic } from '$lib/kanban-logic';
-	import { handleError } from '$lib/errorHandler';
+	// 1. TERIMA PROPS
+	let { projectId, session, profile } = $props<{
+		projectId: string;
+		session: Session | null;
+		profile: any | null;
+	}>();
 
-	export let projectId: string;
+	// 2. AMBIL STORE DARI KANBANLOGIC
+	const projectStore = kanbanLogic.project;
+	const columns = kanbanLogic.columns;
+	const profiles = kanbanLogic.profiles;
+	const loading = kanbanLogic.loading;
+	const error = kanbanLogic.error;
+	const projectLead = kanbanLogic.projectLead;
+	const teamMembers = kanbanLogic.teamMembers;
+	const stats = kanbanLogic.stats;
+	const filteredTasks = kanbanLogic.filteredTasks;
 
-	// Initialize Kanban logic
-	const kanban = new KanbanLogic();
+	// 3. STATE LOKAL UNTUK UI & TAMPILAN ADAPTIF
+	let isAddModalOpen = $state(false);
+	let isEditModalOpen = $state(false);
+	let isEditProjectModalOpen = $state(false);
+	let selectedTask = $state<any>(null);
+	let searchQuery = $state('');
+	let isDesktop = $state(true); // Default ke desktop
+	let activeColumnIndex = $state(0); // Indeks kolom yang aktif di mobile
 
-	// Get stores from kanban - Fixed reactive approach
-	const kanbanStore = kanban.store;
-	const statsStore = kanban.stats;
-	const filteredTasksStore = kanban.filteredTasks;
-
-	// Extract state properties for easier access
-	$: ({ project, columns, tasks, profiles, loading, error, searchQuery, projectLead, teamMembers } =
-		$kanbanStore);
-
-	// Modal states
-	let isAddModalOpen = false;
-	let isEditModalOpen = false;
-	let isEditProjectModalOpen = false;
-	let selectedTask: any = null;
-	let currentProjectId: string | null = null;
-	let isProjectLoading = false; // Add loading flag
-
-	// FIXED: Use onMount to load initial project instead of reactive statement
-	onMount(() => {
-		if (projectId) {
-			loadProjectSafely(projectId);
-		}
+	// 4. EFFECTS & LIFECYCLE
+	$effect(() => {
+		if (projectId) kanbanLogic.loadProject(projectId);
+	});
+	$effect(() => {
+		kanbanLogic.updateSearchQuery(searchQuery);
+	});
+	onDestroy(() => {
+		kanbanLogic.destroy();
 	});
 
-	// FIXED: Create a debounced project loader to prevent multiple calls
-	let loadProjectTimeout: NodeJS.Timeout;
-	async function loadProjectSafely(id: string) {
-		if (isProjectLoading) return; // Prevent multiple simultaneous calls
+	onMount(() => {
+		const checkScreenSize = () => {
+			isDesktop = window.innerWidth >= 768; // Breakpoint md
+		};
+		checkScreenSize();
+		window.addEventListener('resize', checkScreenSize);
+		return () => window.removeEventListener('resize', checkScreenSize);
+	});
 
-		clearTimeout(loadProjectTimeout);
-		loadProjectTimeout = setTimeout(async () => {
-			if (id && id !== currentProjectId) {
-				isProjectLoading = true;
-				currentProjectId = id;
-				try {
-					await kanban.loadProject(id);
-				} catch (error) {
-					handleError(error, 'memuat proyek');
-				} finally {
-					isProjectLoading = false;
-				}
-			}
-		}, 100); // 100ms debounce
-	}
-
-	// FIXED: Watch for projectId changes with debounce
-	$: if (projectId && projectId !== currentProjectId && !isProjectLoading) {
-		loadProjectSafely(projectId);
-	}
-
-	// FIXED: Only update store when project actually changes
-	let lastProjectId: string | null = null;
-	$: if (project && project.id !== lastProjectId) {
-		lastProjectId = project.id;
-		selectedProject.set(project);
-	}
-
-	// REMOVED: Debug logs to prevent unnecessary reactive calls
-	// $: if (projectLead !== null || teamMembers.length > 0) {
-	// 	console.log('Project Lead:', projectLead);
-	// 	console.log('Team Members:', teamMembers);
-	// }
-
-	// Modal handlers
-	function openAddTaskModal() {
-		const toDoColumn = kanban.findColumnByName('to do');
-		if (toDoColumn) {
-			isAddModalOpen = true;
-		} else {
-			handleError(new Error('Kolom "TO DO" tidak ditemukan'), 'menambahkan tugas');
-		}
-	}
-
+	// 5. HANDLERS
 	function openEditTaskModal(task: any) {
 		selectedTask = task;
 		isEditModalOpen = true;
 	}
 
-	function openEditProjectModal() {
-		if (project) {
-			isEditProjectModalOpen = true;
-		} else {
-			handleError(new Error('Project tidak ditemukan'), 'mengedit project');
+	function handleDataRefresh() {
+		if (projectId) kanbanLogic.loadProject(projectId);
+	}
+
+	// Navigasi kolom di mobile
+	function nextColumn() {
+		if ($columns && activeColumnIndex < $columns.length - 1) {
+			activeColumnIndex++;
+		}
+	}
+	function prevColumn() {
+		if (activeColumnIndex > 0) {
+			activeColumnIndex--;
 		}
 	}
 
-	// Task handlers
+	// Handler lain...
 	async function handleAddTask(event: CustomEvent) {
-		const { title, description } = event.detail;
-
-		if (!$session?.user) {
-			handleError(new Error('Silakan login terlebih dahulu'), 'menambahkan tugas');
-			return;
-		}
-
-		const toDoColumn = kanban.findColumnByName('to do');
-		if (!toDoColumn) {
-			handleError(new Error('Kolom "TO DO" tidak ditemukan'), 'menambahkan tugas');
-			return;
-		}
-
+		if (!session?.user) return toast.error('Sesi tidak valid.');
+		const toDoColumn = kanbanLogic.findColumnByName('to do');
+		if (!toDoColumn) return toast.error('Kolom "To Do" tidak ditemukan.');
 		try {
-			await kanban.createTask({
-				title,
-				description,
+			await kanbanLogic.createTask({
+				...event.detail,
 				column_id: toDoColumn.id,
-				assigned_to: $session.user.id,
-				created_by: $session.user.id,
+				created_by: session.user.id,
 				order: 0
 			});
-		} catch (error) {
-			handleError(error, 'menambahkan tugas');
+		} catch (e: any) {
+			toast.error(`Gagal: ${e.message}`);
 		} finally {
 			isAddModalOpen = false;
 		}
 	}
-
 	async function handleEditTask(event: CustomEvent) {
-		const { id, title, description, assigned_to, priority, due_date } = event.detail;
-
+		const { id, updates } = event.detail;
 		try {
-			await kanban.updateTask(id, {
-				title,
-				description,
-				assigned_to,
-				priority,
-				due_date
-			});
-		} catch (error) {
-			handleError(error, 'mengedit tugas');
+			await kanbanLogic.updateTask(id, updates);
+		} catch (e: any) {
+			toast.error(`Gagal: ${e.message}`);
 		} finally {
 			isEditModalOpen = false;
-			selectedTask = null;
 		}
 	}
-
-	async function handleDeleteTask(taskId: string) {
-		const confirmed = confirm('Apakah kamu yakin ingin menghapus tugas ini?');
-		if (!confirmed) return;
-
-		try {
-			await kanban.deleteTask(taskId);
-		} catch (error) {
-			handleError(error, 'menghapus tugas');
+	async function handleDeleteTask(task: any) {
+		if (confirm(`Hapus tugas "${task.title}"?`)) {
+			await kanbanLogic.deleteTask(task.id);
 		}
 	}
-
-	async function handleMoveTask({ detail }) {
-		const { id, toColumnId } = detail;
-
-		try {
-			await kanban.moveTask(id, toColumnId);
-		} catch (error) {
-			handleError(error, 'memindahkan tugas');
-		}
+	async function handleMoveTask({ detail }: CustomEvent) {
+		await kanbanLogic.moveTask(detail.id, detail.toColumnId);
 	}
-
-	// Project handlers
 	async function handleArchiveProject() {
-		try {
-			const archived = await kanban.archiveCurrentProject();
-			if (archived) {
-				selectedProjectId.set(null);
-				selectedProject.set(null);
-				goto('/projects');
-			}
-		} catch (error) {
-			handleError(error, 'mengarsipkan proyek');
-		}
+		const archived = await kanbanLogic.archiveCurrentProject();
+		if (archived) goto('/projects');
 	}
-
-	// FIXED: Add debounce to prevent multiple reloads
-	let reloadTimeout: NodeJS.Timeout;
-	function handleProjectUpdated() {
-		clearTimeout(reloadTimeout);
-		reloadTimeout = setTimeout(() => {
-			if (projectId && !isProjectLoading) {
-				loadProjectSafely(projectId);
-			}
-		}, 200);
-	}
-
-	// FIXED: Debounce search to prevent excessive API calls
-	let searchTimeout: NodeJS.Timeout;
-	function handleSearchChange(event: Event) {
-		const target = event.target as HTMLInputElement;
-		clearTimeout(searchTimeout);
-		searchTimeout = setTimeout(() => {
-			kanban.updateSearchQuery(target.value);
-		}, 300); // 300ms debounce for search
-	}
-
-	// Cleanup
-	onDestroy(() => {
-		clearTimeout(loadProjectTimeout);
-		clearTimeout(reloadTimeout);
-		clearTimeout(searchTimeout);
-		kanban.destroy();
-	});
 </script>
 
 <div class="min-h-full text-gray-900 font-sans">
-	{#if loading || isProjectLoading}
-		<div class="flex justify-center items-center h-full">
-			<p class="text-lg font-semibold text-gray-600">Loading Kanban board...</p>
+	{#if $loading}
+		<div class="flex justify-center items-center h-full pt-20">
+			<div class="text-center">
+				<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+				<p class="mt-4 text-lg font-semibold text-gray-600">Memuat Papan Kanban...</p>
+			</div>
 		</div>
-	{:else if error}
-		<div class="flex justify-center items-center h-full">
-			<p class="text-red-600 text-lg font-bold">Error: {error}</p>
+	{:else if $error}
+		<div class="flex justify-center items-center h-full pt-20">
+			<div class="text-center p-6 bg-red-50 rounded-lg">
+				<p class="text-red-600 text-lg font-bold">Error: {$error}</p>
+				<button
+					on:click={() => goto('/projects')}
+					class="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+				>
+					Kembali ke Daftar Proyek
+				</button>
+			</div>
 		</div>
 	{:else}
 		<div class="flex justify-between items-center mb-6 flex-wrap gap-4">
 			<h2 class="text-3xl font-bold text-gray-800">
-				Project: {project?.name || 'Loading...'}
+				{$projectStore?.name || 'Memuat Nama Proyek...'}
 			</h2>
-			{#if project?.status}
+			{#if $projectStore?.status}
 				<span
 					class="inline-block px-3 py-1 text-xs font-semibold rounded-full
-					{project.status === 'active' ? 'bg-green-100 text-green-800' : ''}
-					{project.status === 'on-hold' ? 'bg-yellow-100 text-yellow-800' : ''}
-					{project.status === 'completed' ? 'bg-blue-100 text-blue-800' : ''}
-					{project.status === 'archived' ? 'bg-gray-200 text-gray-600' : ''}"
+                    {$projectStore.status === 'active' ? 'bg-green-100 text-green-800' : ''}
+                    {$projectStore.status === 'on-hold' ? 'bg-yellow-100 text-yellow-800' : ''}
+                    {$projectStore.status === 'completed' ? 'bg-blue-100 text-blue-800' : ''}
+                    {$projectStore.status === 'archived' ? 'bg-gray-200 text-gray-600' : ''}"
 				>
-					{project.status.replace('-', ' ').toUpperCase()}
+					{$projectStore.status.replace('-', ' ').toUpperCase()}
 				</span>
 			{/if}
 			<div class="flex flex-wrap gap-4">
 				<input
 					type="text"
-					placeholder="Cari task berdasarkan judul..."
-					value={searchQuery}
-					on:input={handleSearchChange}
-					class="w-full md:w-64 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+					placeholder="Cari task..."
+					bind:value={searchQuery}
+					class="w-full md:w-64 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
 				/>
 				<button
-					on:click={openAddTaskModal}
-					class="bg-emerald-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-emerald-700 transition-colors whitespace-nowrap"
+					on:click={() => (isAddModalOpen = true)}
+					class="bg-emerald-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-emerald-700"
 				>
-					+ Tambah Tugas Baru
+					+ Tambah Tugas
 				</button>
 				<button
-					on:click={openEditProjectModal}
-					class="bg-blue-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+					on:click={() => (isEditProjectModalOpen = true)}
+					class="bg-blue-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-blue-700"
 				>
 					Edit Proyek
 				</button>
 				<button
 					on:click={handleArchiveProject}
-					class="bg-gray-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-gray-700 transition-colors whitespace-nowrap"
+					class="bg-gray-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-gray-700"
 				>
-					Arsipkan Proyek
+					Arsipkan
 				</button>
 			</div>
 		</div>
 
-		<!-- Project Leader & Team -->
 		<div class="mt-4 space-y-1">
 			<p class="text-sm text-gray-700">
 				<span class="font-semibold">Project Leader:</span>
-				{projectLead || 'Loading...'}
+				{$projectLead || 'Memuat...'}
 			</p>
 			<p class="text-sm text-gray-700">
-				<span class="font-semibold">Project Team:</span>
-				{#if teamMembers && teamMembers.length > 0}
-					{#each teamMembers as member, i}
-						<span>{member}{i < teamMembers.length - 1 ? ', ' : ''}</span>
-					{/each}
+				<span class="font-semibold">Tim Proyek:</span>
+				{#if $teamMembers && $teamMembers.length > 0}
+					{$teamMembers.join(', ')}
 				{:else}
-					<span class="italic text-gray-500">
-						{projectLead ? 'Belum ada anggota tim' : 'Loading...'}
-					</span>
+					<span class="italic text-gray-500"
+						>{$projectLead ? 'Belum ada anggota tim' : 'Memuat...'}</span
+					>
 				{/if}
 			</p>
 		</div>
 
-		{#if project?.description}
-			<p class="text-gray-600 text-lg mb-6">{project.description}</p>
+		{#if $projectStore?.description}
+			<p class="text-gray-600 text-lg my-6 bg-gray-50 p-4 rounded-lg">
+				{$projectStore.description}
+			</p>
 		{/if}
 
-		<!-- Display stats -->
-		{#if $statsStore}
+		{#if $stats}
 			<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
 				<div class="bg-blue-50 p-4 rounded-lg">
 					<h3 class="text-sm font-semibold text-blue-600">To Do</h3>
-					<p class="text-2xl font-bold text-blue-800">{$statsStore.todoCount}</p>
+					<p class="text-2xl font-bold text-blue-800">{$stats.todoCount}</p>
 				</div>
 				<div class="bg-yellow-50 p-4 rounded-lg">
 					<h3 class="text-sm font-semibold text-yellow-600">In Progress</h3>
-					<p class="text-2xl font-bold text-yellow-800">{$statsStore.inProgressCount}</p>
+					<p class="text-2xl font-bold text-yellow-800">{$stats.inProgressCount}</p>
 				</div>
 				<div class="bg-green-50 p-4 rounded-lg">
 					<h3 class="text-sm font-semibold text-green-600">Done</h3>
-					<p class="text-2xl font-bold text-green-800">{$statsStore.doneCount}</p>
+					<p class="text-2xl font-bold text-green-800">{$stats.doneCount}</p>
 				</div>
-				<div class="bg-gray-50 p-4 rounded-lg">
+				<div class="bg-gray-100 p-4 rounded-lg">
 					<h3 class="text-sm font-semibold text-gray-600">Progress</h3>
-					<p class="text-2xl font-bold text-gray-800">{$statsStore.progressPercent}%</p>
+					<p class="text-2xl font-bold text-gray-800">{$stats.progressPercent}%</p>
 				</div>
 			</div>
 		{/if}
 
-		<div class="flex gap-6 overflow-x-auto pb-6">
-			{#each columns as column (column.id)}
-				<Column
-					{column}
-					allColumns={columns}
-					tasks={($filteredTasksStore ?? []).filter((t) => t.column_id === column.id)}
-					on:edit={(e) => openEditTaskModal(e.detail)}
-					on:delete={(e) => handleDeleteTask(e.detail)}
-					on:move={handleMoveTask}
-				/>
-			{/each}
-		</div>
+		<!-- TAMPILAN KANBAN YANG ADAPTIF -->
+		{#if isDesktop}
+			<div class="flex gap-6 overflow-x-auto pb-6">
+				{#each $columns as column (column.id)}
+					<Column
+						{column}
+						allColumns={$columns}
+						tasks={($filteredTasks ?? []).filter((t) => t.column_id === column.id)}
+						on:edit={(e) => openEditTaskModal(e.detail)}
+						on:delete={(e) => handleDeleteTask(e.detail)}
+						on:move={handleMoveTask}
+					/>
+				{/each}
+			</div>
+		{:else}
+			<div class="w-full">
+				{#if $columns && $columns.length > 0}
+					{@const activeColumn = $columns[activeColumnIndex]}
+					<div class="flex items-center justify-between mb-4">
+						<button
+							on:click={prevColumn}
+							disabled={activeColumnIndex === 0}
+							class="p-2 rounded-lg bg-gray-800 text-white disabled:opacity-30"
+							aria-label="Kolom Sebelumnya"
+						>
+							<ChevronLeft size={24} />
+						</button>
+						<div class="text-center">
+							<h3 class="font-bold text-lg text-gray-700 uppercase">{activeColumn?.name}</h3>
+							<p class="text-sm text-gray-500">
+								({($filteredTasks ?? []).filter((t) => t.column_id === activeColumn?.id).length} tugas)
+							</p>
+						</div>
+						<button
+							on:click={nextColumn}
+							disabled={activeColumnIndex >= $columns.length - 1}
+							class="p-2 rounded-lg bg-gray-800 text-white disabled:opacity-30"
+							aria-label="Kolom Berikutnya"
+						>
+							<ChevronRight size={24} />
+						</button>
+					</div>
+					<Column
+						column={activeColumn}
+						allColumns={$columns}
+						tasks={($filteredTasks ?? []).filter((t) => t.column_id === activeColumn.id)}
+						on:edit={(e) => openEditTaskModal(e.detail)}
+						on:delete={(e) => handleDeleteTask(e.detail)}
+						on:move={handleMoveTask}
+					/>
+				{:else}
+					<p class="text-center text-gray-500 py-10">Proyek ini belum memiliki kolom.</p>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
+	<!-- Modals -->
 	<AddTaskModal
 		isOpen={isAddModalOpen}
+		{session}
+		{profile}
+		allProfiles={$profiles}
 		on:close={() => (isAddModalOpen = false)}
 		on:submit={handleAddTask}
 	/>
-
 	<EditTaskModal
 		isOpen={isEditModalOpen}
 		task={selectedTask}
-		allProfiles={profiles}
+		{session}
+		allProfiles={$profiles}
 		on:close={() => (isEditModalOpen = false)}
 		on:submit={handleEditTask}
 	/>
-
 	<EditProjectModal
 		isOpen={isEditProjectModalOpen}
+		{session}
+		project={$projectStore}
 		on:close={() => (isEditProjectModalOpen = false)}
-		on:projectUpdated={handleProjectUpdated}
+		on:projectUpdated={handleDataRefresh}
+		on:membersUpdated={handleDataRefresh}
 	/>
 </div>

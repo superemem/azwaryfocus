@@ -1,87 +1,90 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import TaskCard from './TaskCard.svelte';
 
-	export let column: any;
-	export let tasks: any[] = [];
-	export let allColumns: any[] = []; // Add this to pass column data
+	// 1. TERIMA PROPS DENGAN CARA SVELTE 5
+	let { column, tasks, allColumns } = $props<{
+		column: any;
+		tasks: any[];
+		allColumns: any[];
+	}>();
 
 	const dispatch = createEventDispatcher();
 
-	function toDndItems(tasks: any[]) {
-		return tasks.map((t) => ({ id: t.id, ...t }));
-	}
+	// 2. STATE UNTUK DETEKSI UKURAN LAYAR
+	let isDesktop = $state(false);
 
-	function findColumnIdByName(columnName: string) {
-		const foundColumn = allColumns.find(
-			(col) => col.name.toLowerCase() === columnName.toLowerCase()
-		);
-		return foundColumn ? foundColumn.id : null;
-	}
+	onMount(() => {
+		const checkScreenSize = () => {
+			isDesktop = window.innerWidth >= 768; // Anggap desktop jika >= 768px (breakpoint md)
+		};
 
-	function handleConsider(event: CustomEvent) {
-		// Update local tasks during drag
+		checkScreenSize(); // Cek saat pertama kali render
+		window.addEventListener('resize', checkScreenSize); // Cek saat ukuran layar berubah
+
+		return () => {
+			window.removeEventListener('resize', checkScreenSize); // Bersihkan saat komponen hilang
+		};
+	});
+
+	// 3. LOGIKA UNTUK DRAG-AND-DROP (DARI KODE LAMA LO)
+	function handleDndConsider(event: CustomEvent) {
 		tasks = event.detail.items;
 	}
 
-	function handleFinalize(event: CustomEvent) {
+	function handleDndFinalize(event: CustomEvent) {
 		const { items, info } = event.detail;
-
-		// Update local tasks
 		tasks = items;
 
-		// If item was moved to a different zone
 		if (info.source !== info.trigger) {
-			const movedItem = items.find((item) => item.id === info.id);
-			if (movedItem) {
-				dispatch('move', {
-					id: movedItem.id,
-					toColumnId: column.id
-				});
-			}
+			dispatch('move', { id: info.id, toColumnId: column.id });
 		}
 	}
 
-	function handleTaskMove(event: CustomEvent) {
-		const { taskId, destinationColumn } = event.detail;
-		const destinationColumnId = findColumnIdByName(destinationColumn);
-
-		if (destinationColumnId) {
-			dispatch('move', {
-				id: taskId,
-				toColumnId: destinationColumnId
-			});
+	// 4. LOGIKA UNTUK TOMBOL DI DALAM KARTU
+	function handleButtonClick(event: CustomEvent) {
+		const { taskId, destinationColumnName } = event.detail;
+		const destinationColumn = allColumns.find(
+			(col) => col.name.toLowerCase() === destinationColumnName.toLowerCase()
+		);
+		if (destinationColumn) {
+			dispatch('move', { id: taskId, toColumnId: destinationColumn.id });
 		}
 	}
 </script>
 
-<div class="flex-shrink-0 min-w-72 w-80 bg-gray-200 p-4 rounded-xl shadow-inner">
-	<h3 class="font-bold text-xl mb-4 text-gray-700 uppercase tracking-wide">
+<div class="flex-shrink-0 w-80 bg-gray-100 p-4 rounded-xl shadow-inner">
+	<h3 class="font-bold text-lg mb-4 text-gray-700 uppercase tracking-wide">
 		{column.name} ({tasks.length})
 	</h3>
 
+	<!-- Implementasi Drag-and-Drop yang Adaptif -->
 	<div
 		use:dndzone={{
-			items: toDndItems(tasks),
-			flipDurationMs: 200,
+			items: tasks,
 			type: 'task',
-			dropTargetStyle: {},
-			dragDisabled: false
+			dragDisabled: !isDesktop // <-- DND dinonaktifkan jika bukan desktop
 		}}
-		on:consider={handleConsider}
-		on:finalize={handleFinalize}
-		class="space-y-4 min-h-[100px] flex flex-col"
-		data-zone-id={column.id}
+		on:consider={handleDndConsider}
+		on:finalize={handleDndFinalize}
+		class="space-y-4 min-h-[100px]"
 	>
-		{#each tasks as task (task.id)}
-			<TaskCard
-				{task}
-				columnName={column.name}
-				on:edit={(e) => dispatch('edit', e.detail)}
-				on:delete={(e) => dispatch('delete', e.detail)}
-				on:move={handleTaskMove}
-			/>
-		{/each}
+		{#if tasks.length === 0}
+			<div class="text-center text-sm text-gray-500 py-10 border-2 border-dashed rounded-lg">
+				Kosong
+			</div>
+		{:else}
+			{#each tasks as task (task.id)}
+				<TaskCard
+					{task}
+					columnName={column.name}
+					{isDesktop}
+					on:edit={(e) => dispatch('edit', e.detail)}
+					on:delete={(e) => dispatch('delete', e.detail)}
+					on:move={handleButtonClick}
+				/>
+			{/each}
+		{/if}
 	</div>
 </div>

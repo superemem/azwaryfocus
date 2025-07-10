@@ -1,68 +1,30 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-	import { session } from '$lib/stores/authStore';
-	import { selectedProjectId, selectedProject } from '$lib/stores/projectStore';
 	import KanbanBoard from '$lib/components/KanbanBoard.svelte';
+	import type { PageData } from './$types';
 
-	// Terima data dari +page.server.ts
-	// Sekarang data juga mengandung projectCreator & teamMembers
-	export let data: {
-		projectId: string;
-		project: any;
-		columnsData: any[];
-		tasksData: any[];
-		profiles: any[];
-		projectCreator: string;
-		teamMembers: string[];
-	};
-
-	let loading = true;
-	let error: string | null = null;
-
-	// Set selectedProjectId & selectedProject segera
-	$: {
-		if (data.projectId) {
-			selectedProjectId.set(data.projectId);
-			selectedProject.set(data.project);
-		}
-	}
-
-	onMount(() => {
-		if (!data.project || (data as any).error) {
-			error = (data as any).error || 'Failed to load project.';
-			loading = false;
-			return;
-		}
-		loading = false;
-	});
-
-	function goBackToProjects() {
-		goto('/projects');
-	}
+	// 1. TERIMA DATA DARI SERVER & LAYOUT
+	// data.project & data.projectId datang dari +page.server.ts di atas.
+	// data.session datang dari root +layout.server.ts.
+	let { data } = $props<PageData>();
 </script>
 
 <svelte:head>
-	<title>{$selectedProject?.name || 'Project'} - Kanban Board</title>
+	<title>{data.project?.name || 'Proyek'} - Papan Kanban</title>
 </svelte:head>
 
-{#if loading}
-	<!-- loading state -->
-{:else if error}
-	<!-- error state -->
-{:else if data.projectId}
-	<div class="min-h-screen bg-gray-50">
-		<!-- breadcrumb / header -->
-		<div class="p-6">
-			<!-- Pass kedua prop baru ke KanbanBoard -->
-			<KanbanBoard
-				projectId={data.projectId}
-				projectLead={data.projectLead}
-				teamMembers={data.teamMembers}
-			/>
-		</div>
-	</div>
-{:else}
-	<!-- not found state -->
-{/if}
+<!-- 
+  Tidak perlu lagi #if loading atau #if error di sini.
+  Jika ada error di server, SvelteKit akan otomatis menampilkan halaman error.
+  Jika berhasil, kita langsung render KanbanBoard.
+  KanbanBoard sendiri sudah punya state loading/error internal dari kanbanLogic.
+-->
+<div class="p-6">
+	{#if data.session}
+		<!-- ======================================================= -->
+		<!-- BAGIAN YANG DIPERBAIKI: OPER `profile` KE KANBANBOARD -->
+		<!-- ======================================================= -->
+		<KanbanBoard projectId={data.projectId} session={data.session} profile={data.profile} />
+	{:else}
+		<p class="text-center text-gray-500">Memuat sesi...</p>
+	{/if}
+</div>

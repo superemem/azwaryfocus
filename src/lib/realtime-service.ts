@@ -1,6 +1,7 @@
-// $lib/services/realtime-service.ts
-import { supabase } from '$lib/supabase';
+// src/lib/services/realtime-service.ts
+import type { SupabaseClient } from '@supabase/supabase-js';
 
+// Interface tidak berubah
 export interface RealtimeCallbacks {
 	onTaskInsert?: (task: any) => void;
 	onTaskUpdate?: (task: any) => void;
@@ -12,23 +13,27 @@ export interface RealtimeCallbacks {
 }
 
 export class RealtimeManager {
+	private supabase: SupabaseClient; // <-- Simpan client yang benar di sini
 	private taskChannel: any = null;
 	private columnChannel: any = null;
 	private projectChannel: any = null;
 	private projectId: string;
 	private callbacks: RealtimeCallbacks;
 
-	constructor(projectId: string, callbacks: RealtimeCallbacks) {
+	// Constructor sekarang menerima client Supabase yang sudah login
+	constructor(projectId: string, callbacks: RealtimeCallbacks, supabase: SupabaseClient) {
 		this.projectId = projectId;
 		this.callbacks = callbacks;
+		this.supabase = supabase; // <-- Simpan client-nya
 	}
 
+	// Semua fungsi di bawah ini sekarang menggunakan `this.supabase`
 	setupTaskListener() {
 		if (this.taskChannel) {
-			supabase.removeChannel(this.taskChannel);
+			this.supabase.removeChannel(this.taskChannel);
 		}
 
-		this.taskChannel = supabase.channel(`public:tasks:project_id=eq.${this.projectId}`);
+		this.taskChannel = this.supabase.channel(`public:tasks:project_id=eq.${this.projectId}`);
 
 		this.taskChannel
 			.on(
@@ -75,10 +80,10 @@ export class RealtimeManager {
 
 	setupColumnListener() {
 		if (this.columnChannel) {
-			supabase.removeChannel(this.columnChannel);
+			this.supabase.removeChannel(this.columnChannel);
 		}
 
-		this.columnChannel = supabase.channel(`public:columns:project_id=eq.${this.projectId}`);
+		this.columnChannel = this.supabase.channel(`public:columns:project_id=eq.${this.projectId}`);
 
 		this.columnChannel
 			.on(
@@ -125,10 +130,10 @@ export class RealtimeManager {
 
 	setupProjectListener() {
 		if (this.projectChannel) {
-			supabase.removeChannel(this.projectChannel);
+			this.supabase.removeChannel(this.projectChannel);
 		}
 
-		this.projectChannel = supabase.channel(`public:projects:id=eq.${this.projectId}`);
+		this.projectChannel = this.supabase.channel(`public:projects:id=eq.${this.projectId}`);
 
 		this.projectChannel
 			.on(
@@ -155,15 +160,15 @@ export class RealtimeManager {
 
 	cleanup() {
 		if (this.taskChannel) {
-			supabase.removeChannel(this.taskChannel);
+			this.supabase.removeChannel(this.taskChannel);
 			this.taskChannel = null;
 		}
 		if (this.columnChannel) {
-			supabase.removeChannel(this.columnChannel);
+			this.supabase.removeChannel(this.columnChannel);
 			this.columnChannel = null;
 		}
 		if (this.projectChannel) {
-			supabase.removeChannel(this.projectChannel);
+			this.supabase.removeChannel(this.projectChannel);
 			this.projectChannel = null;
 		}
 	}

@@ -1,248 +1,131 @@
 <script lang="ts">
+	// 1. IMPORTS
 	import '../app.css';
-	import { supabase } from '$lib/supabase';
-	import { onMount, getContext, onDestroy } from 'svelte';
-	import { get } from 'svelte/store';
-	import { session, userProfile, fetchUserProfile } from '$lib/stores/authStore';
-	import { selectedProjectId } from '$lib/stores/projectStore';
-	import { allTasks, allColumns } from '$lib/stores/kanbanDataStore';
-	import Sidebar from '$lib/components/Sidebar.svelte';
+	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
+	import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+	import { createBrowserClient, isBrowser, parse, serialize } from '@supabase/ssr';
+	import { supabaseClientStore } from '$lib/stores/supabaseStore';
+	import type { LayoutData } from './$types';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { kanbanLogic } from '$lib/kanban-logic';
+	import Sidebar from '$lib/components/Sidebar.svelte';
 	import EditProfileModal from '$lib/components/EditProfileModal.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import { Toaster } from '$lib/toast';
 
-	let projects: any[] = [];
-	let loading = true;
-	let isEditProfileModalOpen = false;
-	let isAddProjectModalOpen = false;
-	let isSidebarOpen = false;
-	let todayDate = '';
-	let uncompletedTasksCount = 0;
-	let todayPlansCount = 0;
+	// 2. TERIMA DATA DARI SERVER
+	let { data } = $props<LayoutData>();
 
-	function formatDate(date: Date) {
-		const options: Intl.DateTimeFormatOptions = {
-			weekday: 'long',
-			year: 'numeric',
-			month: 'long',
-			day: 'numeric'
-		};
-		return date.toLocaleDateString('id-ID', options);
-	}
-
-	$: todayDate = formatDate(new Date());
-
-	$: if (Array.isArray($allColumns) && Array.isArray($allTasks)) {
-		const toDoColumn = $allColumns.find((col) => col.name.toLowerCase() === 'to do');
-		const inProgressColumn = $allColumns.find((col) => col.name.toLowerCase() === 'in progress');
-		todayPlansCount = toDoColumn
-			? $allTasks.filter((task) => task.column_id === toDoColumn.id).length
-			: 0;
-		uncompletedTasksCount = inProgressColumn
-			? $allTasks.filter((task) => task.column_id === inProgressColumn.id).length
-			: 0;
-	} else {
-		todayPlansCount = 0;
-		uncompletedTasksCount = 0;
-	}
-
-	async function fetchProjects() {
-		loading = true;
-		const currentSession = get(session);
-		if (!currentSession) {
-			projects = [];
-			loading = false;
-			return;
-		}
-		const userId = currentSession.user?.id;
-		if (!userId) {
-			projects = [];
-			loading = false;
-			return;
-		}
-		const { data: projectsData, error: projectsError } = await supabase
-			.from('projects')
-			.select('id, name, created_at, description, created_by, status')
-			.eq('status', 'active')
-			.order('created_at', { ascending: false });
-		if (projectsError) {
-			console.error('Error fetching projects:', projectsError);
-			projects = [];
-		} else {
-			projects = projectsData;
-			if (get(selectedProjectId) === null && projects.length > 0) {
-				selectedProjectId.set(projects[0].id);
-			} else if (projects.length === 0) {
-				selectedProjectId.set(null);
+	// 3. BUAT SUPABASE CLIENT
+	const supabase = createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+		global: { fetch },
+		cookies: {
+			get(key: string) {
+				if (!isBrowser()) return;
+				const cookies = parse(document.cookie);
+				return cookies[key];
+			},
+			set(key: string, value: string, options) {
+				if (!isBrowser()) return;
+				document.cookie = serialize(key, value, options);
+			},
+			remove(key: string, options) {
+				if (!isBrowser()) return;
+				document.cookie = serialize(key, '', { ...options, maxAge: -1 });
 			}
 		}
-		loading = false;
-	}
+	});
 
-	async function fetchAllTasksAndColumns(projectId: string | null) {
-		console.log('DEBUG: fetchAllTasksAndColumns triggered for projectId:', projectId);
-		if (!projectId) {
-			allColumns.set([]);
-			allTasks.set([]);
-			return;
-		}
-		const { data: columnsData, error: columnsError } = await supabase
-			.from('columns')
-			.select('*')
-			.eq('project_id', projectId)
-			.order('order', { ascending: true });
-		if (columnsError) {
-			console.error('Error fetching columns:', columnsError);
-			allColumns.set([]);
-			allTasks.set([]);
-			return;
-		}
-		allColumns.set(columnsData);
-		const columnIds = columnsData.map((col) => col.id);
-		if (columnIds.length > 0) {
-			const { data: tasksData, error: tasksError } = await supabase
-				.from('tasks')
-				.select(
-					'*, assignee_profile:profiles!tasks_assigned_to_fkey(username), created_by_profile:profiles!tasks_created_by_fkey(username)'
-				)
-				.in('column_id', columnIds)
-				.order('order', { ascending: true });
-			if (tasksError) {
-				console.error('Error fetching tasks:', tasksError);
-				allTasks.set([]);
-			} else {
-				allTasks.set(tasksData);
+	// 4. ISI STORE
+	supabaseClientStore.set(supabase);
+
+	// 5. LISTENER AUTH
+	onMount(() => {
+		const {
+			data: { subscription }
+		} = supabase.auth.onAuthStateChange((event, newSession) => {
+			if (newSession?.expires_at !== data.session?.expires_at) {
+				invalidateAll();
 			}
-		} else {
-			allTasks.set([]);
-		}
-	}
+		});
+		return () => subscription.unsubscribe();
+	});
 
-	$: if ($selectedProjectId) {
-		fetchAllTasksAndColumns($selectedProjectId);
-	} else {
-		allColumns.set([]);
-		allTasks.set([]);
-	}
+	// 6. STATE LOKAL & EFFECTS
+	let isEditProfileModalOpen = $state(false);
+	let isAddProjectModalOpen = $state(false);
+	let isSidebarOpen = $state(false);
+	let selectedProjectId: string | null = $state(null);
+
+	$effect(() => {
+		if (selectedProjectId === null && data.projects.length > 0) {
+			selectedProjectId = data.projects[0].id;
+		} else if (data.projects.length === 0) {
+			selectedProjectId = null;
+		}
+	});
+
+	$effect(() => {
+		if (selectedProjectId) {
+			kanbanLogic.loadProject(selectedProjectId);
+		} else {
+			kanbanLogic.resetProject();
+		}
+	});
+
+	// 7. FUNGSI-FUNGSI HELPER
+	const todayDate = new Date().toLocaleDateString('id-ID', {
+		weekday: 'long',
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric'
+	});
 
 	async function handleLogout() {
-		const { error } = await supabase.auth.signOut();
-		if (error) console.error('Error logging out:', error.message);
+		await supabase.auth.signOut();
+	}
+
+	function handleProjectAdded() {
+		isAddProjectModalOpen = false;
+		invalidateAll();
 	}
 
 	async function handleProfileUpdate(event: CustomEvent) {
 		const { newUsername, avatarFile } = event.detail;
-		if (!$session?.user) return;
-		let avatarUrl: string | null = get(userProfile)?.avatar_url || null;
+		if (!data.session?.user) return;
+
+		let avatarUrl = data.profile?.avatar_url;
+
 		if (avatarFile) {
-			const userId = $session.user.id;
+			const userId = data.session.user.id;
 			const fileExt = avatarFile.name.split('.').pop();
-			const fileName = `${Date.now()}.${fileExt}`;
-			const filePath = `${userId}/${fileName}`;
-			const { data: uploadData, error: uploadError } = await supabase.storage
+			const filePath = `${userId}/${Date.now()}.${fileExt}`;
+			const { error: uploadError } = await supabase.storage
 				.from('avatars')
-				.upload(filePath, avatarFile, { cacheControl: '3600', upsert: true });
-			if (uploadError) return;
-			const { data: publicUrlData } = supabase.storage
-				.from('avatars')
-				.getPublicUrl(uploadData.path);
+				.upload(filePath, avatarFile);
+			if (uploadError) return console.error('Upload avatar error:', uploadError);
+			const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
 			avatarUrl = publicUrlData.publicUrl;
 		}
-		const updates = { username: newUsername, avatar_url: avatarUrl };
-		const { error: updateError } = await supabase
+
+		const { error } = await supabase
 			.from('profiles')
-			.update(updates)
-			.eq('id', $session.user.id);
-		if (!updateError) {
-			userProfile.update((profile) => ({
-				...profile,
-				username: newUsername,
-				avatar_url: avatarUrl
-			}));
+			.update({ username: newUsername, avatar_url: avatarUrl })
+			.eq('id', data.session.user.id);
+
+		if (!error) {
 			isEditProfileModalOpen = false;
-		}
-	}
-
-	function openEditProfileModal() {
-		isEditProfileModalOpen = true;
-	}
-	function openAddProjectModal() {
-		isAddProjectModalOpen = true;
-	}
-	function handleProjectAdded() {
-		isAddProjectModalOpen = false;
-		fetchProjects();
-	}
-
-	onMount(() => {
-		supabase.auth.getSession().then(({ data }) => {
-			session.set(data.session);
-			if (data.session?.user) fetchUserProfile(data.session.user.id);
-			const currentPath = get(page).url.pathname;
-			if (!data.session && !['/', '/login'].includes(currentPath)) goto('/login');
-		});
-		const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
-			session.set(newSession);
-			if (event === 'SIGNED_IN') {
-				if (newSession.user) {
-					fetchProjects();
-					fetchUserProfile(newSession.user.id);
-				}
-				if ($page.url.pathname === '/login') goto('/profile');
-			} else if (event === 'SIGNED_OUT') {
-				projects = [];
-				userProfile.set(null);
-				selectedProjectId.set(null);
-				allTasks.set([]);
-				allColumns.set([]);
-				goto('/');
-			}
-		});
-		const projectsChannel = supabase.channel('public:projects');
-		projectsChannel
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () =>
-				fetchProjects()
-			)
-			.subscribe();
-		const columnsChannel = supabase.channel('public:columns');
-		columnsChannel
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'columns' }, (payload) => {
-				if (payload.new.project_id === $selectedProjectId)
-					fetchAllTasksAndColumns($selectedProjectId);
-			})
-			.subscribe();
-		const tasksChannel = supabase.channel('public:tasks');
-		tasksChannel
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
-				if (payload.new.project_id === $selectedProjectId)
-					fetchAllTasksAndColumns($selectedProjectId);
-			})
-			.subscribe();
-		fetchProjects();
-		return () => {
-			authListener.subscription.unsubscribe();
-			supabase.removeChannel(projectsChannel);
-			supabase.removeChannel(columnsChannel);
-			supabase.removeChannel(tasksChannel);
-		};
-	});
-
-	$: if ($session?.user) {
-		if ($page.url.pathname !== '/login') {
-			fetchProjects();
-			fetchUserProfile($session.user.id);
+			invalidateAll();
 		}
 	}
 </script>
 
-<!-- UI tetap tidak diubah -->
-
+<!-- BAGIAN HTML LENGKAP -->
 <div class="flex h-screen overflow-hidden">
-	{#if $session && $page.url.pathname !== '/login'}
+	{#if data.session && $page.url.pathname !== '/login'}
 		<div
-			class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden transition-opacity duration-300"
+			class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
 			class:opacity-100={isSidebarOpen}
 			class:opacity-0={!isSidebarOpen}
 			class:pointer-events-none={!isSidebarOpen}
@@ -253,29 +136,23 @@
 			class="fixed top-4 left-4 z-50 p-2 rounded-md bg-gray-800 text-white md:hidden"
 			on:click={() => (isSidebarOpen = !isSidebarOpen)}
 		>
-			<svg
-				class="w-6 h-6"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-				xmlns="http://www.w3.org/2000/svg"
-			>
-				<path
+			<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+				><path
 					stroke-linecap="round"
 					stroke-linejoin="round"
 					stroke-width="2"
 					d="M4 6h16M4 12h16M4 18h16"
-				></path>
-			</svg>
+				></path></svg
+			>
 		</button>
 
 		<Sidebar
-			{projects}
-			userName={$userProfile?.username || 'Guest'}
-			userAvatar={$userProfile?.avatar_url || null}
-			on:refreshProjects={fetchProjects}
-			on:openAddProjectModal={openAddProjectModal}
+			session={data.session}
+			userName={data.profile?.username || data.session.user.email}
+			userAvatar={data.profile?.avatar_url || null}
 			bind:isSidebarOpen
+			on:openAddProjectModal={() => (isAddProjectModalOpen = true)}
+			on:close={() => (isSidebarOpen = false)}
 		/>
 
 		<main class="flex-1 p-8 overflow-y-auto bg-gray-100">
@@ -287,61 +164,59 @@
 						<h1 class="text-4xl font-bold text-gray-800">Dashboard</h1>
 						<p class="text-gray-500 mt-1">{todayDate}</p>
 						<p class="text-gray-600 font-semibold mt-2">
-							Kamu punya {todayPlansCount} rencana hari ini
+							Kamu punya {kanbanLogic.stats.todoCount} rencana hari ini
 						</p>
 						<p class="text-gray-600 font-semibold">
-							Kamu punya {uncompletedTasksCount} tugas yang belum selesai
+							Kamu punya {kanbanLogic.stats.inProgressCount} tugas yang belum selesai
 						</p>
 					</div>
 					<div class="flex gap-4 items-center">
 						<span class="text-gray-600 font-semibold hidden md:block"
-							>Welcome, {$userProfile?.username || 'Guest'}!</span
+							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
 						<button
-							on:click={openEditProfileModal}
-							class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800 transition-colors"
+							on:click={() => (isEditProfileModalOpen = true)}
+							class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
+							>Edit Profil</button
 						>
-							Edit Profil
-						</button>
 						<button
 							on:click={handleLogout}
-							class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700 transition-colors"
+							class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
+							>Logout</button
 						>
-							Logout
-						</button>
 					</div>
 				</div>
 			{:else}
 				<div class="flex justify-end items-center gap-4 mb-6">
 					<span class="text-gray-600 font-semibold hidden md:block"
-						>Welcome, {$userProfile?.username || 'Guest'}!</span
+						>Welcome, {data.profile?.username || data.session.user.email}!</span
 					>
 					<button
-						on:click={openEditProfileModal}
-						class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800 transition-colors"
+						on:click={() => (isEditProfileModalOpen = true)}
+						class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
+						>Edit Profil</button
 					>
-						Edit Profil
-					</button>
 					<button
 						on:click={handleLogout}
-						class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700 transition-colors"
+						class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
+						>Logout</button
 					>
-						Logout
-					</button>
 				</div>
 			{/if}
 			<Toaster class="center-toaster w-64 text-wrap" position="center" />
 			<slot />
 		</main>
 
+		<!-- Modals -->
 		<EditProfileModal
 			isOpen={isEditProfileModalOpen}
-			currentProfile={$userProfile}
+			session={data.session}
 			on:close={() => (isEditProfileModalOpen = false)}
 			on:submit={handleProfileUpdate}
 		/>
 		<AddProjectModal
 			isOpen={isAddProjectModalOpen}
+			session={data.session}
 			on:close={() => (isAddProjectModalOpen = false)}
 			on:projectAdded={handleProjectAdded}
 		/>
