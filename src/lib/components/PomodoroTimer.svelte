@@ -131,9 +131,12 @@
 		timeRemaining = DURATION_DEFAULTS[currentMode];
 		dispatch('timerStop', { mode: currentMode });
 	}
+
 	export function resetTimerFromParent() {
+		pauseTimer();
 		switchMode();
 	}
+
 	export function setRemainingTime(seconds: number) {
 		timeRemaining = seconds;
 		targetEndTime = Date.now() + seconds * 1000;

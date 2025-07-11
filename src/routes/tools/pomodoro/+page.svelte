@@ -15,6 +15,7 @@
 	let stats = $state(data.initialStats);
 	let activeTask = $state<any | null>(null);
 	let currentSessionInfo = $state<{
+		id: string;
 		taskId: string;
 		startTime: number;
 		mode: 'work' | 'break';
@@ -30,7 +31,12 @@
 			return;
 		}
 		activeTask = task;
-		currentSessionInfo = { taskId: task.id, startTime: Date.now(), mode: 'work' };
+		currentSessionInfo = {
+			id: `sess_${Date.now()}`,
+			taskId: task.id,
+			startTime: Date.now(),
+			mode: 'work'
+		};
 		timerRef.startTimerExtern();
 	}
 
@@ -66,6 +72,7 @@
 		} = await supabase.auth.getUser();
 		if (!user) return toast.error('Sesi tidak valid.');
 		const sessionData = {
+			id: currentSessionInfo.id,
 			user_id: user.id,
 			task_id: currentSessionInfo.taskId,
 			start_time: new Date(currentSessionInfo.startTime).toISOString(),
