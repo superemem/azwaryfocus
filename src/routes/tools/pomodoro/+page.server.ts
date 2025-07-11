@@ -8,32 +8,35 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 	}
 
 	const userId = session.user.id;
+	const userTimezone = 'Asia/Jakarta'; // <-- Kita tentukan zona waktu di sini
 
 	const getInitialData = async () => {
-		// Ambil tugas 'To Do' dan 'In Progress' beserta session_count
-		const { data: tasks, error: tasksError } = await supabase
-			.from('tasks')
-			.select('*, columns!inner(name), session_count') // <-- Pastikan session_count diambil
-			.eq('assigned_to', userId)
-			.in('columns.name', ['To Do', 'In Progress']);
+		const [tasksRes, statsRes, columnsRes] = await Promise.all([
+			// Query untuk tugas tidak berubah
+			supabase
+				.from('tasks')
+				.select('*, columns!inner(name), session_count')
+				.eq('assigned_to', userId)
+				.in('columns.name', ['To Do', 'In Progress']),
 
-		// Ambil statistik sesi HARI INI
-		const todayStart = new Date();
-		todayStart.setHours(0, 0, 0, 0);
+			// Panggil RPC baru yang timezone-aware
+			supabase
+				.rpc('get_pomodoro_stats_today', {
+					p_user_id: userId,
+					p_timezone: userTimezone
+				})
+				.single(),
 
-		const { data: sessionsToday, error: sessionsError } = await supabase
-			.from('pomodoro_sessions')
-			.select('duration, mode, completed')
-			.eq('user_id', userId)
-			.gte('start_time', todayStart.toISOString());
+			// Query untuk kolom tidak berubah
+			supabase.from('columns').select('id, name')
+		]);
 
-		// Ambil ID kolom untuk aksi di client
-		const { data: columns, error: columnsError } = await supabase
-			.from('columns')
-			.select('id, name');
+		const { data: tasks, error: tasksError } = tasksRes;
+		const { data: initialStats, error: statsError } = statsRes;
+		const { data: columns, error: columnsError } = columnsRes;
 
-		if (tasksError || sessionsError || columnsError) {
-			console.error('Error fetching pomodoro data:', tasksError || sessionsError || columnsError);
+		if (tasksError || statsError || columnsError) {
+			console.error('Error fetching pomodoro data:', tasksError || statsError || columnsError);
 			return {
 				todoTasks: [],
 				inProgressTasks: [],
@@ -42,16 +45,6 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 			};
 		}
 
-		// Hitung statistik awal
-		const initialStats = {
-			workSessions: sessionsToday.filter((s) => s.mode === 'work' && s.completed).length,
-			totalWorkMinutes: Math.floor(
-				sessionsToday
-					.filter((s) => s.mode === 'work' && s.completed)
-					.reduce((acc, s) => acc + (s.duration || 0), 0) / 60000
-			)
-		};
-
 		const columnIds = {
 			todo: columns?.find((c) => c.name === 'To Do')?.id || null,
 			inProgress: columns?.find((c) => c.name === 'In Progress')?.id || null,
@@ -59,9 +52,12 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 		};
 
 		return {
-			todoTasks: tasks.filter((task) => task.columns?.name === 'To Do'),
-			inProgressTasks: tasks.filter((task) => task.columns?.name === 'In Progress'),
-			initialStats,
+			todoTasks: tasks?.filter((task) => task.columns?.name === 'To Do') ?? [],
+			inProgressTasks: tasks?.filter((task) => task.columns?.name === 'In Progress') ?? [],
+			initialStats: {
+				workSessions: initialStats?.work_sessions || 0,
+				totalWorkMinutes: initialStats?.total_work_minutes || 0
+			},
 			columnIds
 		};
 	};
