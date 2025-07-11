@@ -3,40 +3,68 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals: { supabase, session } }) => {
-	// Jika tidak ada sesi, lempar ke halaman login
 	if (!session) {
 		throw redirect(303, '/login');
 	}
 
 	const userId = session.user.id;
 
-	// Ambil semua tugas yang relevan (To Do & In Progress) milik pengguna
-	const { data: tasks, error } = await supabase
-		.from('tasks')
-		.select('*, columns!inner(name)')
-		.eq('assigned_to', userId)
-		.in('columns.name', ['To Do', 'In Progress']);
+	const getInitialData = async () => {
+		// Ambil tugas 'To Do' dan 'In Progress' beserta session_count
+		const { data: tasks, error: tasksError } = await supabase
+			.from('tasks')
+			.select('*, columns!inner(name), session_count') // <-- Pastikan session_count diambil
+			.eq('assigned_to', userId)
+			.in('columns.name', ['To Do', 'In Progress']);
 
-	if (error) {
-		console.error('Error fetching tasks for Pomodoro:', error);
-		return { todoTasks: [], inProgressTasks: [], columnIds: {} };
-	}
+		// Ambil statistik sesi HARI INI
+		const todayStart = new Date();
+		todayStart.setHours(0, 0, 0, 0);
 
-	// Ambil ID kolom untuk aksi di client
-	const { data: columns } = await supabase.from('columns').select('id, name');
-	const columnIds = {
-		todo: columns?.find((c) => c.name === 'To Do')?.id || null,
-		inProgress: columns?.find((c) => c.name === 'In Progress')?.id || null,
-		done: columns?.find((c) => c.name === 'Done')?.id || null
+		const { data: sessionsToday, error: sessionsError } = await supabase
+			.from('pomodoro_sessions')
+			.select('duration, mode, completed')
+			.eq('user_id', userId)
+			.gte('start_time', todayStart.toISOString());
+
+		// Ambil ID kolom untuk aksi di client
+		const { data: columns, error: columnsError } = await supabase
+			.from('columns')
+			.select('id, name');
+
+		if (tasksError || sessionsError || columnsError) {
+			console.error('Error fetching pomodoro data:', tasksError || sessionsError || columnsError);
+			return {
+				todoTasks: [],
+				inProgressTasks: [],
+				initialStats: { workSessions: 0, totalWorkMinutes: 0 },
+				columnIds: {}
+			};
+		}
+
+		// Hitung statistik awal
+		const initialStats = {
+			workSessions: sessionsToday.filter((s) => s.mode === 'work' && s.completed).length,
+			totalWorkMinutes: Math.floor(
+				sessionsToday
+					.filter((s) => s.mode === 'work' && s.completed)
+					.reduce((acc, s) => acc + (s.duration || 0), 0) / 60000
+			)
+		};
+
+		const columnIds = {
+			todo: columns?.find((c) => c.name === 'To Do')?.id || null,
+			inProgress: columns?.find((c) => c.name === 'In Progress')?.id || null,
+			done: columns?.find((c) => c.name === 'Done')?.id || null
+		};
+
+		return {
+			todoTasks: tasks.filter((task) => task.columns?.name === 'To Do'),
+			inProgressTasks: tasks.filter((task) => task.columns?.name === 'In Progress'),
+			initialStats,
+			columnIds
+		};
 	};
 
-	// Pisahkan tugas berdasarkan status kolom di server
-	const todoTasks = tasks.filter((task) => task.columns?.name === 'To Do');
-	const inProgressTasks = tasks.filter((task) => task.columns?.name === 'In Progress');
-
-	return {
-		todoTasks,
-		inProgressTasks,
-		columnIds
-	};
+	return await getInitialData();
 };

@@ -35,7 +35,7 @@
 		<div class="flex-1">
 			<h4 class="font-bold text-gray-800 leading-tight">{task.title}</h4>
 			<p class="text-xs text-gray-500 mt-1">
-				Untuk: {task.assignee_profile?.username || 'Belum ditugaskan'}
+				Untuk: {task.created_by_profile?.username || 'Belum ditugaskan'}
 			</p>
 		</div>
 		<button
