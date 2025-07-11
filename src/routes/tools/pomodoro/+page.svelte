@@ -5,6 +5,8 @@
 	import PomodoroTimer from '$lib/components/PomodoroTimer.svelte';
 	import toast from 'svelte-5-french-toast';
 	import { onMount } from 'svelte';
+	import { Settings } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 
 	// 1. TERIMA DATA DARI SERVER
 	let { data } = $props<PageData>();
@@ -14,17 +16,17 @@
 	let inProgressTasks = $state(data.inProgressTasks);
 	let stats = $state(data.initialStats);
 	let activeTask = $state<any | null>(null);
-	let currentSessionInfo = $state<{
-		id: string;
-		taskId: string;
-		startTime: number;
-		mode: 'work' | 'break';
-	} | null>(null);
+	let currentSessionInfo = $state<any>(null);
+	let isSettingsModalOpen = $state(false);
 
 	let timerRef: PomodoroTimer;
 	let completeAudio: HTMLAudioElement;
 
-	// 3. FUNGSI-FUNGSI AKSI (TIDAK BERUBAH)
+	// 3. FUNGSI-FUNGSI AKSI (DENGAN PERBAIKAN)
+
+	// =======================================================
+	// BAGIAN YANG DIPERBAIKI: FUNGSI INI SEKARANG LEBIH JELAS
+	// =======================================================
 	function startSession(task: any) {
 		if (currentSessionInfo) {
 			toast.error('Selesaikan sesi yang sedang berjalan terlebih dahulu.');
@@ -37,7 +39,19 @@
 			startTime: Date.now(),
 			mode: 'work'
 		};
+
+		// Perintah yang jelas:
+		// 1. Pastikan timer dalam mode 'kerja' dan reset.
+		timerRef.changeMode('work');
+		// 2. Baru mulai timer.
 		timerRef.startTimerExtern();
+	}
+
+	function startSessionById(taskId: string) {
+		const taskToStart = inProgressTasks.find((t) => t.id === taskId);
+		if (taskToStart) {
+			startSession(taskToStart);
+		}
 	}
 
 	async function playTask(task: any) {
@@ -105,12 +119,46 @@
 			toast.info('Waktu istirahat selesai!');
 		}
 		currentSessionInfo = null;
-		timerRef.resetTimerFromParent();
+	}
+
+	async function handleSettingsUpdate(event: CustomEvent) {
+		const newSettings = event.detail;
+		const supabase = get(supabaseClientStore);
+		if (!supabase) return toast.error('Koneksi gagal.');
+		const {
+			data: { user }
+		} = await supabase.auth.getUser();
+		if (!user) return toast.error('Sesi tidak valid.');
+
+		const { error } = await supabase
+			.from('profiles')
+			.update({ pomodoro_settings: newSettings })
+			.eq('id', user.id);
+
+		if (error) {
+			toast.error('Gagal menyimpan pengaturan.');
+		} else {
+			toast.success('Pengaturan berhasil disimpan!');
+			if (data.profile) {
+				data.profile.pomodoro_settings = newSettings;
+			}
+			isSettingsModalOpen = false;
+		}
 	}
 </script>
 
+<!-- ======================================================= -->
+<!-- BAGIAN HTML LENGKAP -->
+<!-- ======================================================= -->
 <div class="p-6 max-w-4xl mx-auto space-y-8">
 	<h1 class="text-4xl font-bold text-gray-800">Pomodoro Timer</h1>
+	<button
+		on:click={() => goto('/settings')}
+		class="text-gray-500 hover:text-purple-600 p-2 rounded-full hover:bg-gray-100 transition-colors"
+		aria-label="Buka Pengaturan Pomodoro"
+	>
+		<Settings size={24} />
+	</button>
 
 	<!-- Statistik Keseluruhan -->
 	<div class="bg-white p-4 rounded-lg shadow-sm">
@@ -141,7 +189,12 @@
 
 	<!-- Timer Bar yang Compact -->
 	<div class="mx-auto w-full">
-		<PomodoroTimer bind:this={timerRef} on:sessionComplete={handleSessionComplete}>
+		<PomodoroTimer
+			bind:this={timerRef}
+			on:sessionComplete={handleSessionComplete}
+			settings={data.profile?.pomodoro_settings}
+			workSessionsToday={stats.workSessions}
+		>
 			<div slot="dailySessions" class="text-sm font-semibold whitespace-nowrap">
 				<span class="text-gray-800">{stats.workSessions} Sesi Valid</span>
 			</div>
@@ -211,7 +264,7 @@
 							</div>
 							<div class="flex items-center gap-2">
 								<button
-									on:click={() => startSession(task)}
+									on:click={() => startSessionById(task.id)}
 									class="px-3 py-1 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 disabled:opacity-50"
 									disabled={currentSessionInfo !== null}>Lanjutkan</button
 								>

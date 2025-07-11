@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { createEventDispatcher } from 'svelte';
 	import type { Session } from '@supabase/supabase-js';
+	import { User, LayoutDashboard, ListTodo, Clock, Trophy } from '@lucide/svelte'; // <-- Tambahkan Trophy
 
 	// 2. GUNAKAN $props() UNTUK MENERIMA DATA (CARA SVELTE 5)
 	let { userName, userAvatar, session, isSidebarOpen } = $props<{
@@ -75,7 +76,7 @@
 		</p>
 	</div>
 
-	<nav class="flex-1 space-y-4">
+	<nav class="flex-1 space-y-2">
 		<button
 			on:click={() => navigateTo('/profile')}
 			class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url
@@ -83,15 +84,7 @@
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
 		>
-			<!-- SVG untuk Profil -->
-			<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-				><path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-				></path></svg
-			>
+			<User class="w-5 h-5 mr-3" />
 			Profil
 		</button>
 
@@ -103,33 +96,18 @@
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
 		>
-			<!-- SVG untuk Proyek -->
-			<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-				><path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-				></path></svg
-			>
+			<LayoutDashboard class="w-5 h-5 mr-3" />
 			Proyek
 		</button>
 
 		<!-- Dropdown Tugas (sudah benar) -->
-		<div class="space-y-2">
+		<div class="space-y-1">
 			<button
 				on:click={toggleTasksDropdown}
 				class="w-full flex items-center justify-between p-3 rounded-xl font-semibold text-gray-300 hover:bg-gray-800"
 			>
 				<span class="flex items-center">
-					<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-						></path></svg
-					>
+					<ListTodo class="w-5 h-5 mr-3" />
 					Tugas
 				</span>
 				<svg
@@ -144,25 +122,27 @@
 			</button>
 
 			{#if isTasksDropdownOpen}
-				<div class="ml-6 space-y-2">
+				<div class="ml-6 space-y-1">
 					<button
 						on:click={() => navigateTo('/tasks/to-do')}
-						class="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
+						class="block w-full text-left px-4 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
 						class:bg-purple-700={$page.url.pathname === '/tasks/to-do'}>• To Do</button
 					>
 					<button
 						on:click={() => navigateTo('/tasks/in-progress')}
-						class="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
+						class="block w-full text-left px-4 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
 						class:bg-purple-700={$page.url.pathname === '/tasks/in-progress'}>• In Progress</button
 					>
 					<button
 						on:click={() => navigateTo('/tasks/done')}
-						class="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
+						class="block w-full text-left px-4 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
 						class:bg-purple-700={$page.url.pathname === '/tasks/done'}>• Done</button
 					>
 				</div>
 			{/if}
 		</div>
+
+		<hr class="border-gray-700" />
 
 		<button
 			on:click={() => navigateTo('/tools/pomodoro')}
@@ -171,16 +151,22 @@
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
 		>
-			<!-- SVG untuk Pomodoro -->
-			<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-				><path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-				></path></svg
-			>
-			Pomodoro Timer
+			<Clock class="w-5 h-5 mr-3" />
+			Pomodoro
+		</button>
+
+		<!-- ======================================================= -->
+		<!-- TOMBOL BARU UNTUK LEADERBOARD -->
+		<!-- ======================================================= -->
+		<button
+			on:click={() => navigateTo('/leaderboard')}
+			class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url
+				.pathname === '/leaderboard'
+				? 'bg-purple-600 text-white shadow-lg'
+				: 'text-gray-300 hover:bg-gray-800'}"
+		>
+			<Trophy class="w-5 h-5 mr-3" />
+			Leaderboard
 		</button>
 	</nav>
 

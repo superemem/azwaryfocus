@@ -1,22 +1,29 @@
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
-	import { Play, Pause, RotateCcw } from '@lucide/svelte';
+	import { Play, Pause, Coffee } from '@lucide/svelte';
 	import { browser } from '$app/environment';
 
 	const dispatch = createEventDispatcher();
 
-	// Durasi default dalam detik
-	const DURATION_DEFAULTS = {
-		work: 25 * 60,
-		shortBreak: 5 * 60,
-		longBreak: 15 * 60
-	};
+	// 1. TERIMA PENGATURAN & DATA DARI PARENT
+	let { settings, workSessionsToday } = $props<{
+		settings?: { work: number; shortBreak: number; longBreak: number };
+		workSessionsToday: number;
+	}>();
 
-	// State internal timer
-	let timeRemaining = $state(DURATION_DEFAULTS.work);
+	// 2. BUAT SUMBER KEBENARAN UNTUK DURASI (REAKTIF)
+	// Perbaikan: Kunci objek sekarang menggunakan string agar cocok dengan tipe `currentMode`
+	const durations = $derived({
+		work: (settings?.work || 25) * 60,
+		'short-break': (settings?.shortBreak || 5) * 60,
+		'long-break': (settings?.longBreak || 15) * 60
+	});
+
+	// 3. STATE INTERNAL TIMER
+	let timeRemaining = $state(durations.work);
 	let isRunning = $state(false);
 	let currentMode: 'work' | 'short-break' | 'long-break' = $state('work');
-	let cyclesCompleted = $state(0);
+	let isChoosingBreak = $state(false);
 
 	// "Jam Dinding" untuk timer pintar
 	let targetEndTime = 0;
@@ -24,7 +31,13 @@
 	let audio: HTMLAudioElement;
 	let originalTitle = '';
 
-	// Tampilan waktu yang diformat
+	// 4. LOGIKA UNTUK LINGKARAN PROGRES (SVG)
+	const radius = 45;
+	const circumference = 2 * Math.PI * radius;
+	const progressOffset = $derived(
+		circumference * (1 - timeRemaining / (durations[currentMode] || durations.work))
+	);
+
 	const displayTime = $derived(formatTime(timeRemaining));
 
 	// Efek untuk update judul tab
@@ -37,11 +50,15 @@
 			if (isRunning) {
 				const modeText = currentMode === 'work' ? 'Fokus' : 'Istirahat';
 				document.title = `${displayTime} - ${modeText}`;
-			} else {
-				if (document.title !== originalTitle) {
-					document.title = originalTitle;
-				}
+			} else if (!isChoosingBreak) {
+				if (document.title !== originalTitle) document.title = originalTitle;
 			}
+		}
+	});
+
+	$effect(() => {
+		if (!isRunning && !isChoosingBreak) {
+			timeRemaining = durations[currentMode];
 		}
 	});
 
@@ -89,209 +106,260 @@
 
 	function completeSession() {
 		pauseTimer();
-		const sessionDuration =
-			(currentMode === 'work'
-				? DURATION_DEFAULTS.work
-				: currentMode === 'short-break'
-					? DURATION_DEFAULTS.shortBreak
-					: DURATION_DEFAULTS.longBreak) * 1000;
-
-		dispatch('sessionComplete', {
-			mode: currentMode,
-			duration: sessionDuration,
-			completed: true
-		});
-
+		const sessionDuration = durations[currentMode] * 1000;
+		dispatch('sessionComplete', { mode: currentMode, duration: sessionDuration, completed: true });
 		audio?.play().catch(() => {});
-	}
 
-	function switchMode() {
 		if (currentMode === 'work') {
-			cyclesCompleted++;
-			changeMode(cyclesCompleted % 4 === 0 ? 'long-break' : 'short-break');
+			isChoosingBreak = true;
+			if (browser) document.title = 'Sesi Selesai!';
 		} else {
 			changeMode('work');
 		}
 	}
 
-	function changeMode(mode: typeof currentMode) {
-		pauseTimer();
-		currentMode = mode;
-		timeRemaining = DURATION_DEFAULTS[mode];
-		targetEndTime = 0;
+	function startBreak(mode: 'short-break' | 'long-break') {
+		isChoosingBreak = false;
+		changeMode(mode);
+		startTimer();
 	}
 
-	// API untuk parent komponen
+	export function changeMode(mode: typeof currentMode) {
+		pauseTimer();
+		currentMode = mode;
+		timeRemaining = durations[mode];
+		targetEndTime = 0;
+		isChoosingBreak = false;
+	}
+
 	export function startTimerExtern() {
 		startTimer();
 	}
 	export function resetTimerExtern() {
 		pauseTimer();
 		targetEndTime = 0;
-		timeRemaining = DURATION_DEFAULTS[currentMode];
+		isChoosingBreak = false;
+		timeRemaining = durations[currentMode];
 		dispatch('timerStop', { mode: currentMode });
 	}
-
-	export function resetTimerFromParent() {
-		pauseTimer();
-		switchMode();
-	}
-
 	export function setRemainingTime(seconds: number) {
 		timeRemaining = seconds;
 		targetEndTime = Date.now() + seconds * 1000;
 	}
 </script>
 
-<!-- BAGIAN HTML YANG COMPACT & HORIZONTAL -->
+<!-- BAGIAN HTML YANG SUDAH DI-REDESAIN TOTAL -->
 <div class="pomodoro-bar">
-	<div class="timer-display">{displayTime}</div>
+	<!-- Lingkaran Timer -->
+	<div class="timer-circle">
+		<svg viewBox="0 0 100 100">
+			<circle class="track" cx="50" cy="50" r={radius} />
+			<circle
+				class="progress"
+				cx="50"
+				cy="50"
+				r={radius}
+				stroke-dasharray={circumference}
+				stroke-dashoffset={progressOffset}
+			/>
+		</svg>
+		<div class="timer-content">
+			<button
+				on:click={isRunning ? pauseTimer : startTimer}
+				class="play-pause-btn"
+				aria-label={isRunning ? 'Pause' : 'Play'}
+			>
+				{#if isRunning}
+					<Pause size={18} />
+				{:else}
+					<Play size={18} class="play-icon" />
+				{/if}
+			</button>
+			<div class="time-text">{displayTime}</div>
+		</div>
+	</div>
 
-	<div class="controls">
+	<!-- Tombol Istirahat -->
+	<div class="break-buttons">
 		<button
-			on:click={isRunning ? pauseTimer : startTimer}
-			class="control-btn primary"
-			aria-label={isRunning ? 'Pause Timer' : 'Start Timer'}
+			class="break-btn"
+			disabled={!isChoosingBreak}
+			on:click={() => startBreak('short-break')}
 		>
-			{#if !isRunning}
-				<Play size={24} class="play-icon" />
-			{:else}
-				<Pause size={24} />
-			{/if}
+			<Coffee size={16} />
+			<span>Istirahat {settings?.shortBreak || 5} mnt</span>
 		</button>
-		<button on:click={resetTimerExtern} class="control-btn secondary" aria-label="Reset Timer">
-			<RotateCcw size={18} />
+		<button class="break-btn" disabled={!isChoosingBreak} on:click={() => startBreak('long-break')}>
+			<Coffee size={16} />
+			<span>Istirahat {settings?.longBreak || 15} mnt</span>
 		</button>
 	</div>
 
-	<div class="modes">
-		<button on:click={() => changeMode('work')} class:active={currentMode === 'work'}>Kerja</button>
-		<button on:click={() => changeMode('short-break')} class:active={currentMode === 'short-break'}
-			>Istirahat</button
-		>
-		<button on:click={() => changeMode('long-break')} class:active={currentMode === 'long-break'}
-			>Lama</button
-		>
-	</div>
-
-	<div class="stats">
-		<slot name="dailySessions" />
-		<div class="dots">
-			<slot name="sessionDots" />
+	<!-- Statistik Sesi -->
+	<div class="session-stats">
+		<p class="stats-title">Sesi Fokus Hari Ini</p>
+		<div class="dots-container">
+			{#each Array(16) as _, i}
+				<span class="dot" class:completed={i < workSessionsToday}></span>
+			{/each}
 		</div>
 	</div>
 </div>
 
 <audio bind:this={audio} src="/victory.mp3" preload="auto" />
 
-<!-- BAGIAN STYLE UNTUK TAMPILAN HORIZONTAL -->
+<!-- BAGIAN STYLE BARU UNTUK TAMPILAN RESPONSIVE -->
 <style>
 	.pomodoro-bar {
 		font-family:
 			system-ui,
 			-apple-system,
-			BlinkMacSystemFont,
-			'Segoe UI',
-			Roboto,
-			Oxygen,
-			Ubuntu,
-			Cantarell,
-			'Open Sans',
-			'Helvetica Neue',
 			sans-serif;
 		display: flex;
+		flex-direction: column; /* Default: tumpuk ke bawah untuk mobile */
 		align-items: center;
 		gap: 1.5rem;
-		background-color: #f1f5f9; /* bg-slate-100 */
-		padding: 1rem;
-		border-radius: 1rem; /* rounded-2xl */
-		box-shadow:
-			0 4px 6px -1px rgb(0 0 0 / 0.1),
-			0 2px 4px -2px rgb(0 0 0 / 0.1);
+		background-color: #f1f5f9;
+		padding: 1.5rem 1rem;
+		border-radius: 1rem;
+		box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
 	}
 
-	.timer-display {
-		font-size: 2.25rem; /* text-4xl */
-		font-weight: 700; /* font-bold */
-		color: #1e293b; /* text-slate-800 */
-		background-color: white;
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem; /* rounded-lg */
+	.timer-circle {
+		position: relative;
+		width: 240px; /* Sedikit lebih besar */
+		height: 240px;
+	}
+
+	.timer-circle svg {
+		transform: rotate(-90deg);
+		width: 100%;
+		height: 100%;
+	}
+
+	.timer-circle circle {
+		fill: none;
+		stroke-width: 5;
+	}
+
+	.timer-circle .track {
+		stroke: #e2e8f0;
+	}
+
+	.timer-circle .progress {
+		stroke: #22c55e;
+		transition: stroke-dashoffset 0.3s linear;
+	}
+
+	.timer-content {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.play-pause-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		color: #475569;
+		padding: 0;
+		margin-bottom: -4px;
+	}
+	.play-icon {
+		margin-left: 4px;
+	}
+
+	.time-text {
+		font-size: 2rem; /* text-4xl */
+		font-weight: 700;
+		color: #1e293b;
 		font-feature-settings: 'tnum';
 		font-variant-numeric: tabular-nums;
 	}
 
-	.controls {
+	.break-buttons {
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		flex-direction: column;
+		gap: 0.75rem;
+		width: 100%;
 	}
 
-	.control-btn {
+	.break-btn {
 		display: flex;
-		justify-content: center;
 		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
 		border: none;
-		border-radius: 9999px;
+		padding: 0.75rem 1rem;
+		border-radius: 0.5rem;
+		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease-in-out;
+		background-color: #4b5563;
+		color: #d1d5db;
 	}
 
-	.control-btn.primary {
-		width: 3.5rem; /* w-14 */
-		height: 3.5rem; /* h-14 */
-		background-color: #7c3aed; /* bg-purple-600 */
+	.break-btn:not(:disabled) {
+		background-color: #f97316;
 		color: white;
 	}
-	.control-btn.primary:hover {
-		background-color: #6d28d9; /* hover:bg-purple-700 */
-	}
-	.control-btn.primary .play-icon {
-		margin-left: 3px;
+
+	.break-btn:not(:disabled):hover {
+		background-color: #ea580c;
 	}
 
-	.control-btn.secondary {
-		width: 2.5rem; /* w-10 */
-		height: 2.5rem; /* h-10 */
-		background-color: #e2e8f0; /* bg-slate-200 */
-		color: #475569; /* text-slate-600 */
-	}
-	.control-btn.secondary:hover {
-		background-color: #cbd5e1; /* hover:bg-slate-300 */
+	.session-stats {
+		width: 100%;
+		text-align: center;
 	}
 
-	.modes {
-		display: flex;
-		gap: 0.25rem;
-		background-color: #e2e8f0; /* bg-slate-200 */
-		padding: 0.25rem;
+	.stats-title {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: #475569;
+		margin-bottom: 0.75rem;
+	}
+
+	.dots-container {
+		display: grid;
+		grid-template-columns: repeat(8, 1fr);
+		gap: 0.5rem;
+		max-width: 240px;
+		margin: auto;
+	}
+
+	.dot {
+		width: 0.75rem;
+		height: 0.75rem;
 		border-radius: 9999px;
-		margin-left: auto; /* Pushes modes to the right */
+		background-color: #d1d5db;
+		transition: background-color 0.3s;
 	}
 
-	.modes button {
-		border: none;
-		background-color: transparent;
-		padding: 0.5rem 1rem;
-		border-radius: 9999px;
-		font-size: 0.875rem; /* text-sm */
-		font-weight: 600; /* font-semibold */
-		color: #475569; /* text-slate-600 */
-		cursor: pointer;
-		transition: all 0.2s ease-in-out;
+	.dot.completed {
+		background-color: #22c55e;
 	}
 
-	.modes button.active {
-		background-color: white;
-		color: #1e293b; /* text-slate-800 */
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-	}
-
-	.stats {
-		text-align: right;
-	}
-
-	.dots {
-		margin-top: 0.25rem;
+	/* Media Query untuk Desktop */
+	@media (min-width: 768px) {
+		.pomodoro-bar {
+			flex-direction: row; /* Kembali ke horizontal */
+			gap: 2rem;
+			padding: 1rem;
+		}
+		.break-buttons {
+			flex-direction: column;
+		}
+		.session-stats {
+			margin-left: auto;
+			text-align: left;
+			width: auto;
+		}
 	}
 </style>

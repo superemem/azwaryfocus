@@ -12,7 +12,11 @@ export const load: LayoutServerLoad = async ({ locals: { supabase, session } }) 
 	// Ambil profil PENGGUNA dan semua PROYEK YANG BISA DIA AKSES secara bersamaan
 	// RLS (Row-Level Security) akan menangani proyek milik sendiri dan undangan.
 	const [profileRes, projectsRes] = await Promise.all([
-		supabase.from('profiles').select('username, avatar_url, role').eq('id', userId).single(),
+		supabase
+			.from('profiles')
+			.select('username, avatar_url, role, pomodoro_settings')
+			.eq('id', userId)
+			.single(),
 		supabase.from('projects').select('*').neq('status', 'archived')
 	]);
 
