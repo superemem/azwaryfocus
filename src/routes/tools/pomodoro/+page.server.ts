@@ -8,35 +8,65 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 	}
 
 	const userId = session.user.id;
-	const userTimezone = 'Asia/Jakarta'; // <-- Kita tentukan zona waktu di sini
+	const userTimezone = 'Asia/Jakarta'; // <-- Zona waktu pengguna
 
 	const getInitialData = async () => {
-		const [tasksRes, statsRes, columnsRes] = await Promise.all([
-			// Query untuk tugas tidak berubah
-			supabase
-				.from('tasks')
-				.select('*, columns!inner(name), session_count')
-				.eq('assigned_to', userId)
-				.in('columns.name', ['To Do', 'In Progress']),
+		// Ambil tugas 'To Do' dan 'In Progress' beserta session_count
+		const { data: tasks, error: tasksError } = await supabase
+			.from('tasks')
+			.select('*, columns!inner(name), session_count')
+			.eq('assigned_to', userId)
+			.in('columns.name', ['To Do', 'In Progress']);
 
-			// Panggil RPC baru yang timezone-aware
-			supabase
-				.rpc('get_pomodoro_stats_today', {
-					p_user_id: userId,
-					p_timezone: userTimezone
-				})
-				.single(),
+		// DEBUG: Log tasks data
+		console.log('Tasks data:', tasks);
+		console.log('Tasks error:', tasksError);
 
-			// Query untuk kolom tidak berubah
-			supabase.from('columns').select('id, name')
-		]);
+		// Gunakan fungsi PostgreSQL yang timezone-aware
+		const { data: statsData, error: statsError } = await supabase.rpc('get_pomodoro_stats_today', {
+			p_user_id: userId,
+			p_timezone: userTimezone
+		});
 
-		const { data: tasks, error: tasksError } = tasksRes;
-		const { data: initialStats, error: statsError } = statsRes;
-		const { data: columns, error: columnsError } = columnsRes;
+		// DEBUG: Log stats data
+		console.log('Stats data:', statsData);
+		console.log('Stats error:', statsError);
 
-		if (tasksError || statsError || columnsError) {
-			console.error('Error fetching pomodoro data:', tasksError || statsError || columnsError);
+		// FALLBACK: Jika fungsi PostgreSQL error, gunakan method lama sementara
+		let fallbackStats = null;
+		if (statsError) {
+			const todayStart = new Date();
+			todayStart.setHours(0, 0, 0, 0);
+
+			const { data: sessionsToday, error: sessionsError } = await supabase
+				.from('pomodoro_sessions')
+				.select('duration, mode, completed')
+				.eq('user_id', userId)
+				.gte('start_time', todayStart.toISOString());
+
+			if (!sessionsError && sessionsToday) {
+				fallbackStats = {
+					workSessions: sessionsToday.filter((s) => s.mode === 'work' && s.completed).length,
+					totalWorkMinutes: Math.floor(
+						sessionsToday
+							.filter((s) => s.mode === 'work' && s.completed)
+							.reduce((acc, s) => acc + (s.duration || 0), 0) / 60000
+					)
+				};
+			}
+		}
+
+		// Ambil ID kolom untuk aksi di client
+		const { data: columns, error: columnsError } = await supabase
+			.from('columns')
+			.select('id, name');
+
+		// DEBUG: Log columns data
+		console.log('Columns data:', columns);
+		console.log('Columns error:', columnsError);
+
+		if (tasksError || columnsError) {
+			console.error('Error fetching pomodoro data:', tasksError || columnsError);
 			return {
 				todoTasks: [],
 				inProgressTasks: [],
@@ -45,19 +75,33 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 			};
 		}
 
+		// Ambil statistik dari hasil fungsi PostgreSQL atau fallback
+		const initialStats = statsError
+			? fallbackStats || { workSessions: 0, totalWorkMinutes: 0 }
+			: {
+					workSessions: Number(statsData?.[0]?.work_sessions || 0),
+					totalWorkMinutes: Number(statsData?.[0]?.total_work_minutes || 0)
+				};
+
+		console.log('Initial stats:', initialStats);
+
 		const columnIds = {
 			todo: columns?.find((c) => c.name === 'To Do')?.id || null,
 			inProgress: columns?.find((c) => c.name === 'In Progress')?.id || null,
 			done: columns?.find((c) => c.name === 'Done')?.id || null
 		};
 
+		// DEBUG: Log final filtering
+		const todoTasks = tasks?.filter((task) => task.columns?.name === 'To Do') || [];
+		const inProgressTasks = tasks?.filter((task) => task.columns?.name === 'In Progress') || [];
+
+		console.log('Todo tasks:', todoTasks);
+		console.log('In Progress tasks:', inProgressTasks);
+
 		return {
-			todoTasks: tasks?.filter((task) => task.columns?.name === 'To Do') ?? [],
-			inProgressTasks: tasks?.filter((task) => task.columns?.name === 'In Progress') ?? [],
-			initialStats: {
-				workSessions: initialStats?.work_sessions || 0,
-				totalWorkMinutes: initialStats?.total_work_minutes || 0
-			},
+			todoTasks,
+			inProgressTasks,
+			initialStats,
 			columnIds
 		};
 	};
