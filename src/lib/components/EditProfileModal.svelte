@@ -1,93 +1,90 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import '../../app.css';
+	import toast from 'svelte-5-french-toast';
+	import type { Session } from '@supabase/supabase-js';
 
-	export let isOpen: boolean;
-	export let currentProfile: {
-		id: string;
-		username: string;
-		avatar_url: string | null;
-		job_title?: string;
-	} | null = null;
-
-	let newUsername = '';
-	let avatarFile: File | null = null;
-	let avatarPreviewUrl: string | null = null;
-	let jobTitle = '';
+	// 1. TERIMA PROPS DENGAN CARA SVELTE 5
+	let { isOpen, session, profile } = $props<{
+		isOpen: boolean;
+		session: Session | null;
+		profile: { username: string; avatar_url: string | null; job_title?: string } | null;
+	}>();
 
 	const dispatch = createEventDispatcher();
 
-	$: if (isOpen && currentProfile) {
-		newUsername = currentProfile.username;
-		avatarPreviewUrl = currentProfile.avatar_url;
-		jobTitle = currentProfile.job_title || '';
-		avatarFile = null;
-	}
+	// 2. STATE LOKAL UNTUK FORM
+	let newUsername = $state('');
+	let jobTitle = $state('');
+	let avatarFile = $state<File | null>(null);
+	let avatarPreviewUrl = $state<string | null>(null);
+
+	// 3. EFEK UNTUK MENGISI FORM SAAT MODAL DIBUKA ATAU PROFIL BERUBAH
+	$effect(() => {
+		if (isOpen && profile) {
+			newUsername = profile.username || '';
+			jobTitle = profile.job_title || '';
+			avatarPreviewUrl = profile.avatar_url;
+			avatarFile = null; // Reset file input setiap kali modal dibuka
+		}
+	});
 
 	function handleFileChange(event: Event) {
 		const target = event.target as HTMLInputElement;
-		const file = target.files?.[0] || null;
-		avatarFile = file;
-
+		const file = target.files?.[0];
 		if (file) {
+			avatarFile = file;
 			const reader = new FileReader();
 			reader.onload = (e) => {
 				avatarPreviewUrl = e.target?.result as string;
 			};
 			reader.readAsDataURL(file);
-		} else {
-			avatarPreviewUrl = currentProfile?.avatar_url || null;
 		}
 	}
 
 	function handleSubmit() {
-		if (newUsername.trim() === '') {
-			alert('Username tidak boleh kosong!');
+		if (!newUsername.trim()) {
+			toast.error('Username tidak boleh kosong.');
 			return;
 		}
-		dispatch('submit', {
-			newUsername,
-			avatarFile,
-			jobTitle
-		});
-		dispatch('close');
-	}
-
-	function handleClose() {
-		dispatch('close');
+		// Kirim data ke parent (layout) untuk diproses
+		dispatch('submit', { newUsername, avatarFile, jobTitle });
 	}
 </script>
 
 {#if isOpen}
-	<div class="modal-backdrop">
-		<div class="modal-content">
+	<div class="modal-backdrop" on:click|self={() => dispatch('close')}>
+		<div class="modal-content" on:click|stopPropagation>
 			<div class="modal-header">
 				<h3>Edit Profil</h3>
-				<button class="close-btn" on:click={handleClose}>&times;</button>
+				<button class="close-btn" on:click={() => dispatch('close')}>&times;</button>
 			</div>
 			<div class="modal-body">
-				{#if currentProfile}
-					<form on:submit|preventDefault={handleSubmit}>
+				{#if profile}
+					<form on:submit|preventDefault={handleSubmit} class="space-y-4">
 						<div class="avatar-preview-container">
-							{#if avatarPreviewUrl}
-								<img src={avatarPreviewUrl} alt="Avatar Preview" class="avatar-preview" />
-							{:else}
-								<div class="avatar-placeholder">?</div>
-							{/if}
+							<img
+								src={avatarPreviewUrl ||
+									`https://ui-avatars.com/api/?name=${newUsername || 'G'}&background=4f46e5&color=fff&size=128`}
+								alt="Avatar Preview"
+								class="avatar-preview"
+							/>
+							<label for="avatar-upload" class="avatar-change-btn"> Ubah Foto </label>
+							<input
+								id="avatar-upload"
+								type="file"
+								accept="image/*"
+								on:change={handleFileChange}
+								class="hidden"
+							/>
 						</div>
 
 						<div class="form-group">
-							<label for="avatar">Foto Profil:</label>
-							<input id="avatar" type="file" accept="image/*" on:change={handleFileChange} />
-						</div>
-
-						<div class="form-group">
-							<label for="username">Username:</label>
+							<label for="username">Username</label>
 							<input id="username" type="text" bind:value={newUsername} />
 						</div>
 
 						<div class="form-group">
-							<label for="job_title">Jabatan:</label>
+							<label for="job_title">Jabatan</label>
 							<select id="job_title" bind:value={jobTitle}>
 								<option value="">- Pilih Jabatan -</option>
 								<option value="Head Creative Marketing">Head Creative Marketing</option>
@@ -98,12 +95,14 @@
 						</div>
 
 						<div class="modal-actions">
+							<button type="button" class="cancel-btn" on:click={() => dispatch('close')}
+								>Batal</button
+							>
 							<button type="submit" class="save-btn">Simpan Perubahan</button>
-							<button type="button" class="cancel-btn" on:click={handleClose}>Batal</button>
 						</div>
 					</form>
 				{:else}
-					<p>Loading profil...</p>
+					<p>Memuat profil...</p>
 				{/if}
 			</div>
 		</div>
@@ -111,7 +110,6 @@
 {/if}
 
 <style>
-	/* Backdrop yang menutupi layar */
 	.modal-backdrop {
 		position: fixed;
 		top: 0;
@@ -124,8 +122,6 @@
 		align-items: center;
 		z-index: 1000;
 	}
-
-	/* Konten modal */
 	.modal-content {
 		background-color: #fff;
 		padding: 25px;
@@ -133,17 +129,7 @@
 		width: 90%;
 		max-width: 450px;
 		box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-		transform: scale(0.95);
-		animation: scaleIn 0.2s forwards;
 	}
-
-	/* Animasi muncul */
-	@keyframes scaleIn {
-		to {
-			transform: scale(1);
-		}
-	}
-
 	.modal-header {
 		display: flex;
 		justify-content: space-between;
@@ -152,13 +138,11 @@
 		padding-bottom: 10px;
 		margin-bottom: 20px;
 	}
-
 	.modal-header h3 {
 		margin: 0;
 		font-size: 1.5em;
 		color: #333;
 	}
-
 	.close-btn {
 		background: none;
 		border: none;
@@ -167,99 +151,36 @@
 		color: #888;
 		padding: 0;
 	}
-
-	.close-btn:hover {
-		color: #555;
-	}
-
 	.avatar-preview-container {
 		text-align: center;
-		margin-bottom: 20px;
+		margin-bottom: 1rem;
 	}
 	.avatar-preview {
-		width: 100px;
-		height: 100px;
+		width: 120px;
+		height: 120px;
 		border-radius: 50%;
 		object-fit: cover;
-		border: 3px solid #007bff;
+		border: 4px solid #e5e7eb;
+		margin: 0 auto 1rem;
 	}
-	.avatar-placeholder {
-		width: 100px;
-		height: 100px;
-		border-radius: 50%;
-		background-color: #eee;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		font-size: 3em;
-		color: #ccc;
-		margin: 0 auto;
-		border: 3px solid #ddd;
+	.avatar-change-btn {
+		cursor: pointer;
+		padding: 0.5rem 1rem;
+		background-color: #e5e7eb;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 600;
 	}
-
 	.form-group {
-		margin-bottom: 20px;
+		margin-bottom: 1rem;
 	}
-
 	.form-group label {
 		display: block;
 		font-weight: bold;
-		margin-bottom: 8px;
+		margin-bottom: 0.5rem;
 		color: #555;
 	}
-
-	.form-group input {
-		width: 100%;
-		padding: 12px;
-		border: 1px solid #ddd;
-		border-radius: 6px;
-		font-size: 1em;
-		box-sizing: border-box;
-		transition: border-color 0.2s;
-	}
-
-	.form-group input:focus {
-		outline: none;
-		border-color: #007bff;
-	}
-
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 10px;
-	}
-
-	.modal-actions button {
-		padding: 10px 20px;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-		font-size: 1em;
-		font-weight: bold;
-		transition:
-			background-color 0.2s,
-			transform 0.1s;
-	}
-
-	.save-btn {
-		background-color: #007bff;
-		color: white;
-	}
-
-	.save-btn:hover {
-		background-color: #0056b3;
-		transform: translateY(-1px);
-	}
-
-	.cancel-btn {
-		background-color: #e0e0e0;
-		color: #555;
-	}
-
-	.cancel-btn:hover {
-		background-color: #ccc;
-		transform: translateY(-1px);
-	}
+	.form-group input,
 	.form-group select {
 		width: 100%;
 		padding: 12px;
@@ -267,11 +188,27 @@
 		border-radius: 6px;
 		font-size: 1em;
 		box-sizing: border-box;
-		transition: border-color 0.2s;
 	}
-
-	.form-group select:focus {
-		outline: none;
-		border-color: #007bff;
+	.modal-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 10px;
+		margin-top: 1.5rem;
+	}
+	.modal-actions button {
+		padding: 10px 20px;
+		border: none;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 1em;
+		font-weight: bold;
+	}
+	.save-btn {
+		background-color: #4f46e5;
+		color: white;
+	}
+	.cancel-btn {
+		background-color: #e0e0e0;
+		color: #555;
 	}
 </style>

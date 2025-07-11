@@ -211,6 +211,7 @@
 		<EditProfileModal
 			isOpen={isEditProfileModalOpen}
 			session={data.session}
+			profile={data.profile}
 			on:close={() => (isEditProfileModalOpen = false)}
 			on:submit={handleProfileUpdate}
 		/>
