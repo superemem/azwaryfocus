@@ -6,13 +6,20 @@
 	const dispatch = createEventDispatcher();
 
 	// 1. TERIMA PENGATURAN & DATA DARI PARENT
+	// PERBAIKAN: Menambahkan properti suara ke settings
 	let { settings, workSessionsToday } = $props<{
-		settings?: { work: number; shortBreak: number; longBreak: number };
+		settings?: {
+			work: number;
+			shortBreak: number;
+			longBreak: number;
+			workSound: string;
+			endSessionSound: string;
+			endBreakSound: string;
+		};
 		workSessionsToday: number;
 	}>();
 
 	// 2. BUAT SUMBER KEBENARAN UNTUK DURASI (REAKTIF)
-	// Perbaikan: Kunci objek sekarang menggunakan string agar cocok dengan tipe `currentMode`
 	const durations = $derived({
 		work: (settings?.work || 25) * 60,
 		'short-break': (settings?.shortBreak || 5) * 60,
@@ -28,8 +35,11 @@
 	// "Jam Dinding" untuk timer pintar
 	let targetEndTime = 0;
 	let intervalId: any = null;
-	let audio: HTMLAudioElement;
 	let originalTitle = '';
+
+	// PERBAIKAN: Referensi untuk audio ambient dan notifikasi
+	let ambientAudio: HTMLAudioElement;
+	let notificationAudio: HTMLAudioElement;
 
 	// 4. LOGIKA UNTUK LINGKARAN PROGRES (SVG)
 	const radius = 45;
@@ -37,7 +47,6 @@
 	const progressOffset = $derived(
 		circumference * (1 - timeRemaining / (durations[currentMode] || durations.work))
 	);
-
 	const displayTime = $derived(formatTime(timeRemaining));
 
 	// Efek untuk update judul tab
@@ -75,6 +84,39 @@
 		return `${m}:${s}`;
 	}
 
+	// --- FUNGSI-FUNGSI SUARA YANG BARU ---
+	function manageAmbientSound(action: 'play' | 'stop') {
+		if (!settings?.workSound || settings.workSound === 'none' || !browser) return;
+
+		if (action === 'play' && currentMode === 'work') {
+			ambientAudio.src = settings.workSound;
+			ambientAudio.loop = true;
+			ambientAudio.play().catch(() => {});
+		} else {
+			ambientAudio.pause();
+			ambientAudio.currentTime = 0;
+		}
+	}
+
+	function playNotificationSound() {
+		if (!browser) return;
+		let soundSrc = '';
+		if (currentMode === 'work' && settings?.endSessionSound) {
+			soundSrc = settings.endSessionSound;
+		} else if (
+			(currentMode === 'short-break' || currentMode === 'long-break') &&
+			settings?.endBreakSound
+		) {
+			soundSrc = settings.endBreakSound;
+		}
+
+		if (soundSrc && soundSrc !== 'none') {
+			notificationAudio.src = soundSrc;
+			notificationAudio.play().catch(() => {});
+		}
+	}
+	// ------------------------------------
+
 	// Logika Timer Pintar
 	function tick() {
 		const remainingMs = targetEndTime - Date.now();
@@ -93,6 +135,7 @@
 			targetEndTime = Date.now() + timeRemaining * 1000;
 		}
 		intervalId = setInterval(tick, 250);
+		manageAmbientSound('play'); // Panggil suara ambient
 		dispatch('timerStart', { mode: currentMode });
 	}
 
@@ -101,6 +144,7 @@
 		isRunning = false;
 		clearInterval(intervalId);
 		intervalId = null;
+		manageAmbientSound('stop'); // Hentikan suara ambient
 		dispatch('timerPause', { mode: currentMode });
 	}
 
@@ -108,7 +152,7 @@
 		pauseTimer();
 		const sessionDuration = durations[currentMode] * 1000;
 		dispatch('sessionComplete', { mode: currentMode, duration: sessionDuration, completed: true });
-		audio?.play().catch(() => {});
+		playNotificationSound(); // Panggil suara notifikasi
 
 		if (currentMode === 'work') {
 			isChoosingBreak = true;
@@ -156,6 +200,8 @@
 			<circle class="track" cx="50" cy="50" r={radius} />
 			<circle
 				class="progress"
+				class:work={currentMode === 'work'}
+				class:break={currentMode !== 'work'}
 				cx="50"
 				cy="50"
 				r={radius}
@@ -165,7 +211,7 @@
 		</svg>
 		<div class="timer-content">
 			<button
-				on:click={isRunning ? pauseTimer : startTimer}
+				onclick={isRunning ? pauseTimer : startTimer}
 				class="play-pause-btn"
 				aria-label={isRunning ? 'Pause' : 'Play'}
 			>
@@ -181,15 +227,11 @@
 
 	<!-- Tombol Istirahat -->
 	<div class="break-buttons">
-		<button
-			class="break-btn"
-			disabled={!isChoosingBreak}
-			on:click={() => startBreak('short-break')}
-		>
+		<button class="break-btn" disabled={!isChoosingBreak} onclick={() => startBreak('short-break')}>
 			<Coffee size={16} />
 			<span>Istirahat {settings?.shortBreak || 5} mnt</span>
 		</button>
-		<button class="break-btn" disabled={!isChoosingBreak} on:click={() => startBreak('long-break')}>
+		<button class="break-btn" disabled={!isChoosingBreak} onclick={() => startBreak('long-break')}>
 			<Coffee size={16} />
 			<span>Istirahat {settings?.longBreak || 15} mnt</span>
 		</button>
@@ -206,7 +248,9 @@
 	</div>
 </div>
 
-<audio bind:this={audio} src="/victory.mp3" preload="auto" />
+<!-- PERBAIKAN: Dua elemen audio untuk fungsi yang berbeda -->
+<audio bind:this={ambientAudio} preload="auto"></audio>
+<audio bind:this={notificationAudio} preload="auto"></audio>
 
 <!-- BAGIAN STYLE BARU UNTUK TAMPILAN RESPONSIVE -->
 <style>
@@ -247,8 +291,15 @@
 	}
 
 	.timer-circle .progress {
+		transition:
+			stroke-dashoffset 0.3s linear,
+			stroke 0.3s ease;
+	}
+	.timer-circle .progress.work {
 		stroke: #22c55e;
-		transition: stroke-dashoffset 0.3s linear;
+	}
+	.timer-circle .progress.break {
+		stroke: #3b82f6;
 	}
 
 	.timer-content {
@@ -276,7 +327,7 @@
 	}
 
 	.time-text {
-		font-size: 1.2rem; /* text-4xl */
+		font-size: 1.2rem;
 		font-weight: 700;
 		color: #1e293b;
 		font-feature-settings: 'tnum';

@@ -1,4 +1,3 @@
-// src/routes/settings/+page.server.ts
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -17,11 +16,18 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
+
+		// Ambil data durasi
 		const work = Number(formData.get('work'));
 		const shortBreak = Number(formData.get('shortBreak'));
 		const longBreak = Number(formData.get('longBreak'));
 
-		// Validasi input
+		// PERBAIKAN: Ambil data suara
+		const workSound = formData.get('workSound') as string;
+		const endSessionSound = formData.get('endSessionSound') as string;
+		const endBreakSound = formData.get('endBreakSound') as string;
+
+		// Validasi input durasi
 		if (
 			isNaN(work) ||
 			isNaN(shortBreak) ||
@@ -33,10 +39,14 @@ export const actions: Actions = {
 			return fail(400, { error: 'Semua durasi harus diisi dengan angka positif.' });
 		}
 
+		// Gabungkan semua pengaturan menjadi satu objek
 		const pomodoroSettings = {
 			work,
 			shortBreak,
-			longBreak
+			longBreak,
+			workSound,
+			endSessionSound,
+			endBreakSound
 		};
 
 		// Simpan pengaturan baru ke database
@@ -46,6 +56,7 @@ export const actions: Actions = {
 			.eq('id', session.user.id);
 
 		if (error) {
+			console.error('Error updating settings:', error);
 			return fail(500, { error: 'Gagal menyimpan pengaturan ke database.' });
 		}
 

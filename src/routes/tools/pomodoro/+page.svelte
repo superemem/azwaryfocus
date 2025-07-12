@@ -5,7 +5,8 @@
 	import PomodoroTimer from '$lib/components/PomodoroTimer.svelte';
 	import toast from 'svelte-5-french-toast';
 	import { onMount } from 'svelte';
-	import { Settings } from '@lucide/svelte';
+	// PERBAIKAN: Impor ikon Trophy
+	import { Settings, Trophy } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
 	// 1. TERIMA DATA DARI SERVER
@@ -19,7 +20,6 @@
 	let currentSessionInfo = $state<any>(null);
 
 	let timerRef: PomodoroTimer;
-	let completeAudio: HTMLAudioElement;
 
 	// 3. FUNGSI-FUNGSI AKSI (DENGAN PERBAIKAN)
 
@@ -149,17 +149,29 @@
 </script>
 
 <!-- ======================================================= -->
-<!-- BAGIAN HTML (DENGAN PERBAIKAN SINTAKS) -->
+<!-- BAGIAN HTML (DENGAN PERBAIKAN UI) -->
 <!-- ======================================================= -->
 <div class="p-6 max-w-4xl mx-auto space-y-8">
-	<h1 class="text-4xl font-bold text-gray-800">Pomodoro Timer</h1>
-	<button
-		onclick={() => goto('/settings')}
-		class="text-gray-500 hover:text-purple-600 p-2 rounded-full hover:bg-gray-100 transition-colors"
-		aria-label="Buka Pengaturan Pomodoro"
-	>
-		<Settings size={24} />
-	</button>
+	<div class="flex justify-between items-center">
+		<h1 class="text-4xl font-bold text-gray-800">Pomodoro Timer</h1>
+		<!-- PERBAIKAN: Tombol Pengaturan & Leaderboard -->
+		<div class="flex items-center gap-3">
+			<button
+				onclick={() => goto('/settings')}
+				class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+			>
+				<Settings size={18} />
+				<span>Pengaturan</span>
+			</button>
+			<button
+				onclick={() => goto('/leaderboard')}
+				class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+			>
+				<Trophy size={18} />
+				<span>Leaderboard</span>
+			</button>
+		</div>
+	</div>
 
 	<!-- Statistik Keseluruhan -->
 	<div class="bg-white p-4 rounded-lg shadow-sm">
@@ -197,10 +209,10 @@
 			workSessionsToday={stats.workSessions}
 		>
 			<div slot="dailySessions" class="text-sm font-semibold whitespace-nowrap">
-				<span class="text-gray-800">{stats.workSessions} Sesi Valid</span>
+				<span class="text-gray-800">{stats.workSessions} Sesi Kamu Hari Ini</span>
 			</div>
 			<div slot="sessionDots" class="flex space-x-1">
-				{#each Array(8) as _, i}
+				{#each Array(16) as _, i}
 					<span
 						class="w-2 h-2 rounded-full transition-colors {i < stats.workSessions
 							? 'bg-green-500'
@@ -282,5 +294,3 @@
 		</div>
 	</div>
 </div>
-
-<audio bind:this={completeAudio} src="/victory.mp3" preload="auto"></audio>
