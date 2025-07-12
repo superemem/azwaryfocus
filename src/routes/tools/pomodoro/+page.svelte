@@ -178,11 +178,11 @@
 		<h3 class="font-semibold text-gray-800 mb-2">Statistik Hari Ini</h3>
 		<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
 			<div>
-				<div class="text-gray-500">Sesi Kerja</div>
+				<div class="text-gray-500">Sesi Fokus</div>
 				<div class="text-2xl font-bold text-green-600">{stats.workSessions}</div>
 			</div>
 			<div>
-				<div class="text-gray-500">Total Waktu Fokus</div>
+				<div class="text-gray-500">Durasi Fokus</div>
 				<div class="text-lg font-semibold">
 					{Math.floor(stats.totalWorkMinutes / 60)}j {stats.totalWorkMinutes % 60}m
 				</div>
@@ -194,8 +194,8 @@
 				</div>
 			</div>
 			<div>
-				<div class="text-gray-500">Target</div>
-				<div class="text-lg font-semibold">8 sesi</div>
+				<div class="text-gray-500">Maksimal Sesi Per Hari</div>
+				<div class="text-lg font-semibold">16 sesi</div>
 			</div>
 		</div>
 	</div>

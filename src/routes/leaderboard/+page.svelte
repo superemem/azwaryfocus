@@ -35,7 +35,7 @@
 	<div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
 		<div class="text-center md:text-left">
 			<h1 class="text-4xl font-bold text-gray-800">Focus Leaderboard</h1>
-			<p class="text-gray-500 mt-2">Siapa yang Si Paling Fokus di tim?</p>
+			<p class="text-gray-500 mt-2">Siapa Si Paling Fokus di tim?</p>
 		</div>
 		<div>
 			<select
