@@ -1,16 +1,14 @@
-// src/routes/profile/+page.server.ts
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals: { supabase, session } }) => {
-	// Jika tidak ada sesi, lempar ke halaman login
 	if (!session) {
 		throw redirect(303, '/login');
 	}
 
 	const userId = session.user.id;
+	const userTimezone = 'Asia/Jakarta';
 
-	// Fungsi untuk menghitung statistik tugas
 	const getTaskStats = async () => {
 		const { data: tasks, error } = await supabase
 			.from('tasks')
@@ -39,18 +37,18 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 		return stats;
 	};
 
-	// Fungsi untuk menghitung statistik proyek
 	const getProjectStats = async () => {
 		const { count: initiatedCount, error: initiatedError } = await supabase
 			.from('projects')
 			.select('id', { count: 'exact' })
 			.eq('created_by', userId);
 
-		const { count: invitedCount, error: invitedError } = await supabase
+		const { data: memberOf, error: invitedError } = await supabase
 			.from('project_members')
-			.select('project_id', { count: 'exact' })
-			.eq('user_id', userId)
-			.neq('project_id', null); // Pastikan tidak menghitung baris null
+			.select('projects!inner(id, created_by)')
+			.eq('user_id', userId);
+
+		const invitedCount = memberOf?.filter((p) => p.projects.created_by !== userId).length || 0;
 
 		if (initiatedError || invitedError) {
 			console.error('Error fetching project stats:', initiatedError || invitedError);
@@ -58,17 +56,92 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 
 		return {
 			initiated: initiatedCount ?? 0,
-			// Kurangi 1 jika user juga owner di salah satu proyek yang diundang (opsional, tergantung logika bisnis)
-			invited: (invitedCount ?? 0) > 0 ? invitedCount : 0
+			invited: invitedCount
 		};
 	};
 
-	// Jalankan semua pengambilan data secara bersamaan
-	const [monthlyStats, projectStats] = await Promise.all([getTaskStats(), getProjectStats()]);
+	// PERBAIKAN: Tambahkan debug dan error handling yang lebih baik
+	const getFocusAnalytics = async (days = 7) => {
+		const endDate = new Date();
+		const startDate = new Date();
+		startDate.setDate(endDate.getDate() - (days - 1));
+		startDate.setHours(0, 0, 0, 0);
 
-	// Kembalikan semua data yang sudah matang
+		// Debug: Log parameters
+		console.log('Analytics parameters:', {
+			userId,
+			startDate: startDate.toISOString(),
+			endDate: endDate.toISOString(),
+			userTimezone
+		});
+
+		// Pertama, cek apakah ada data pomodoro_sessions untuk user ini
+		const { data: sessionCheck, error: sessionError } = await supabase
+			.from('pomodoro_sessions')
+			.select('id, user_id, mode, completed, start_time, duration')
+			.eq('user_id', userId)
+			.eq('mode', 'work')
+			.eq('completed', true)
+			.limit(5);
+
+		if (sessionError) {
+			console.error('Error checking pomodoro sessions:', sessionError);
+		} else {
+			console.log('Sample pomodoro sessions:', sessionCheck);
+		}
+
+		// Jalankan RPC function
+		const { data, error } = await supabase.rpc('get_personal_analytics', {
+			p_user_id: userId,
+			p_start_date: startDate.toISOString(),
+			p_end_date: endDate.toISOString(),
+			p_group_by_unit: 'day',
+			p_timezone: userTimezone
+		});
+
+		if (error) {
+			console.error('Error fetching focus analytics:', error);
+			console.error('RPC Error details:', {
+				code: error.code,
+				message: error.message,
+				details: error.details,
+				hint: error.hint
+			});
+			return [];
+		}
+
+		console.log('Analytics data received:', data);
+		return data || [];
+	};
+
+	// PERBAIKAN: Tambahkan function untuk mendapatkan profile
+	const getUserProfile = async () => {
+		const { data: profile, error } = await supabase
+			.from('profiles')
+			.select('*')
+			.eq('id', userId)
+			.single();
+
+		if (error) {
+			console.error('Error fetching user profile:', error);
+			return { username: 'User', avatar_url: null };
+		}
+
+		return profile;
+	};
+
+	const [monthlyStats, projectStats, initialAnalytics, profile] = await Promise.all([
+		getTaskStats(),
+		getProjectStats(),
+		getFocusAnalytics(7),
+		getUserProfile()
+	]);
+
 	return {
 		monthlyStats,
-		projectStats
+		projectStats,
+		initialAnalytics,
+		profile,
+		session
 	};
 };
