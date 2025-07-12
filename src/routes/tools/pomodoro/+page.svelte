@@ -17,16 +17,12 @@
 	let stats = $state(data.initialStats);
 	let activeTask = $state<any | null>(null);
 	let currentSessionInfo = $state<any>(null);
-	let isSettingsModalOpen = $state(false);
 
 	let timerRef: PomodoroTimer;
 	let completeAudio: HTMLAudioElement;
 
 	// 3. FUNGSI-FUNGSI AKSI (DENGAN PERBAIKAN)
 
-	// =======================================================
-	// BAGIAN YANG DIPERBAIKI: FUNGSI INI SEKARANG LEBIH JELAS
-	// =======================================================
 	function startSession(task: any) {
 		if (currentSessionInfo) {
 			toast.error('Selesaikan sesi yang sedang berjalan terlebih dahulu.');
@@ -39,11 +35,7 @@
 			startTime: Date.now(),
 			mode: 'work'
 		};
-
-		// Perintah yang jelas:
-		// 1. Pastikan timer dalam mode 'kerja' dan reset.
 		timerRef.changeMode('work');
-		// 2. Baru mulai timer.
 		timerRef.startTimerExtern();
 	}
 
@@ -56,23 +48,57 @@
 
 	async function playTask(task: any) {
 		const supabase = get(supabaseClientStore);
-		if (!supabase || !data.columnIds.inProgress) return;
+		if (!supabase) return;
+
+		// 1. Cari ID kolom 'In Progress' yang benar untuk proyek tugas ini
+		const { data: column, error } = await supabase
+			.from('columns')
+			.select('id')
+			.eq('project_id', task.project_id)
+			.eq('name', 'In Progress')
+			.single();
+
+		if (error || !column) {
+			toast.error("Gagal memulai: Kolom 'In Progress' tidak ditemukan.");
+			return;
+		}
+
+		// 2. Lanjutkan dengan ID kolom yang sudah benar
 		todoTasks = todoTasks.filter((t) => t.id !== task.id);
 		inProgressTasks.push(task);
 		startSession(task);
-		await supabase.from('tasks').update({ column_id: data.columnIds.inProgress }).eq('id', task.id);
+		await supabase.from('tasks').update({ column_id: column.id }).eq('id', task.id);
 	}
 
 	async function finishTask(task: any) {
 		const supabase = get(supabaseClientStore);
-		if (!supabase || !data.columnIds.done) return;
+		if (!supabase) return;
+
+		// 1. Cari ID kolom 'Done' yang benar untuk proyek tugas ini
+		const { data: column, error } = await supabase
+			.from('columns')
+			.select('id')
+			.eq('project_id', task.project_id) // Kuncinya di sini
+			.eq('name', 'Done')
+			.single();
+
+		if (error || !column) {
+			toast.error("Gagal menyelesaikan: Kolom 'Selesai' tidak ditemukan.");
+			return;
+		}
+
+		// Hentikan timer jika tugas yang selesai adalah tugas yang aktif
 		if (currentSessionInfo && currentSessionInfo.taskId === task.id) {
 			timerRef.resetTimerExtern();
 			currentSessionInfo = null;
 		}
+
+		// Update UI secara lokal
 		inProgressTasks = inProgressTasks.filter((t) => t.id !== task.id);
 		if (activeTask?.id === task.id) activeTask = null;
-		await supabase.from('tasks').update({ column_id: data.columnIds.done }).eq('id', task.id);
+
+		// 2. Update task dengan ID kolom yang sudah benar
+		await supabase.from('tasks').update({ column_id: column.id }).eq('id', task.id);
 		toast.success(`Tugas "${task.title}" selesai!`);
 	}
 
@@ -120,40 +146,15 @@
 		}
 		currentSessionInfo = null;
 	}
-
-	async function handleSettingsUpdate(event: CustomEvent) {
-		const newSettings = event.detail;
-		const supabase = get(supabaseClientStore);
-		if (!supabase) return toast.error('Koneksi gagal.');
-		const {
-			data: { user }
-		} = await supabase.auth.getUser();
-		if (!user) return toast.error('Sesi tidak valid.');
-
-		const { error } = await supabase
-			.from('profiles')
-			.update({ pomodoro_settings: newSettings })
-			.eq('id', user.id);
-
-		if (error) {
-			toast.error('Gagal menyimpan pengaturan.');
-		} else {
-			toast.success('Pengaturan berhasil disimpan!');
-			if (data.profile) {
-				data.profile.pomodoro_settings = newSettings;
-			}
-			isSettingsModalOpen = false;
-		}
-	}
 </script>
 
 <!-- ======================================================= -->
-<!-- BAGIAN HTML LENGKAP -->
+<!-- BAGIAN HTML (DENGAN PERBAIKAN SINTAKS) -->
 <!-- ======================================================= -->
 <div class="p-6 max-w-4xl mx-auto space-y-8">
 	<h1 class="text-4xl font-bold text-gray-800">Pomodoro Timer</h1>
 	<button
-		on:click={() => goto('/settings')}
+		onclick={() => goto('/settings')}
 		class="text-gray-500 hover:text-purple-600 p-2 rounded-full hover:bg-gray-100 transition-colors"
 		aria-label="Buka Pengaturan Pomodoro"
 	>
@@ -230,7 +231,7 @@
 						<li class="flex items-center justify-between p-3 bg-gray-50 rounded-md border">
 							<span class="text-gray-700 font-medium">{task.title}</span>
 							<button
-								on:click={() => playTask(task)}
+								onclick={() => playTask(task)}
 								class="px-4 py-2 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 disabled:opacity-50"
 								disabled={currentSessionInfo !== null}>Mulai</button
 							>
@@ -264,12 +265,12 @@
 							</div>
 							<div class="flex items-center gap-2">
 								<button
-									on:click={() => startSessionById(task.id)}
+									onclick={() => startSessionById(task.id)}
 									class="px-3 py-1 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 disabled:opacity-50"
 									disabled={currentSessionInfo !== null}>Lanjutkan</button
 								>
 								<button
-									on:click={() => finishTask(task)}
+									onclick={() => finishTask(task)}
 									class="px-3 py-1 bg-green-500 text-white rounded-md text-xs hover:bg-green-600"
 									>Selesai</button
 								>
@@ -282,4 +283,4 @@
 	</div>
 </div>
 
-<audio bind:this={completeAudio} src="/victory.mp3" preload="auto" />
+<audio bind:this={completeAudio} src="/victory.mp3" preload="auto"></audio>
