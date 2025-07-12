@@ -227,8 +227,8 @@
 
 	.timer-circle {
 		position: relative;
-		width: 240px; /* Sedikit lebih besar */
-		height: 240px;
+		width: 120px; /* Sedikit lebih besar */
+		height: 120px;
 	}
 
 	.timer-circle svg {
@@ -276,7 +276,7 @@
 	}
 
 	.time-text {
-		font-size: 2rem; /* text-4xl */
+		font-size: 1.2rem; /* text-4xl */
 		font-weight: 700;
 		color: #1e293b;
 		font-feature-settings: 'tnum';
@@ -287,7 +287,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
-		width: 100%;
+		width: 60%;
 	}
 
 	.break-btn {
