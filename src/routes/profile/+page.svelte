@@ -36,23 +36,39 @@
 	let isLoading = $state(false);
 	let isChartReady = $state(false);
 
-	// PERBAIKAN FINAL: Menggunakan $state dan $effect untuk kalkulasi yang lebih robust
-	let summaryStats = $state({ totalMinutes: 0, totalSessions: 0 });
-
+	// Statistik ringkasan dihitung dari productivityTimeline agar sinkron dengan bar chart
+	let summaryStats = $state({ totalSeconds: 0, totalSessions: 0 });
 	$effect(() => {
 		if (!productivityTimeline || productivityTimeline.length === 0) {
-			summaryStats = { totalMinutes: 0, totalSessions: 0 };
+			summaryStats = { totalSeconds: 0, totalSessions: 0 };
 		} else {
 			summaryStats = productivityTimeline.reduce(
 				(acc, curr) => {
-					acc.totalMinutes += Number(curr.total_focus_minutes) || 0;
+					// Kalkulasi dalam detik
+					acc.totalSeconds += (Number(curr.total_focus_minutes) || 0) * 60;
 					acc.totalSessions += Number(curr.total_sessions) || 0;
 					return acc;
 				},
-				{ totalMinutes: 0, totalSessions: 0 }
+				{ totalSeconds: 0, totalSessions: 0 }
 			);
 		}
 	});
+
+	// PERBAIKAN: Fungsi format durasi yang lebih sederhana dan bekerja dengan detik
+	function formatDuration(totalSeconds: number) {
+		if (isNaN(totalSeconds) || totalSeconds < 0) {
+			return '00:00:00';
+		}
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = Math.floor(totalSeconds % 60);
+
+		const paddedHours = String(hours).padStart(2, '0');
+		const paddedMinutes = String(minutes).padStart(2, '0');
+		const paddedSeconds = String(seconds).padStart(2, '0');
+
+		return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
+	}
 
 	// --- Fungsi-fungsi Chart ---
 	async function initCharts() {
@@ -121,10 +137,12 @@
 	function createOrUpdateProjectChart() {
 		if (!projectChartCanvas || !isChartReady) return;
 
+		// PERBAIKAN: Kosongkan data chart, jangan dihancurkan
 		if (projectBreakdown.length === 0) {
 			if (projectChartInstance) {
-				projectChartInstance.destroy();
-				projectChartInstance = null;
+				projectChartInstance.data.labels = [];
+				projectChartInstance.data.datasets[0].data = [];
+				projectChartInstance.update();
 			}
 			return;
 		}
@@ -254,6 +272,7 @@
 	}
 
 	onMount(initCharts);
+
 	$effect(() => {
 		if (isChartReady) {
 			createOrUpdateTimelineChart();
@@ -362,8 +381,8 @@
 						<Clock class="w-8 h-8 text-purple-600" />
 						<div>
 							<p class="text-xs text-gray-500">Waktu Fokus</p>
-							<p class="text-xl font-bold text-gray-800">
-								{Math.floor(summaryStats.totalMinutes / 60)}j {summaryStats.totalMinutes % 60}m
+							<p class="text-xl font-bold text-gray-800 tabular-nums">
+								{formatDuration(summaryStats.totalSeconds)}
 							</p>
 						</div>
 					</div>
