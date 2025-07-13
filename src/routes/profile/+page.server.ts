@@ -7,8 +7,8 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 	}
 
 	const userId = session.user.id;
-	const userTimezone = 'Asia/Jakarta';
 
+	// Fungsi statistik dasar (dipertahankan)
 	const getTaskStats = async () => {
 		const { data: tasks, error } = await supabase
 			.from('tasks')
@@ -38,21 +38,17 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 	};
 
 	const getProjectStats = async () => {
-		const { count: initiatedCount, error: initiatedError } = await supabase
+		const { count: initiatedCount } = await supabase
 			.from('projects')
 			.select('id', { count: 'exact' })
 			.eq('created_by', userId);
 
-		const { data: memberOf, error: invitedError } = await supabase
+		const { data: memberOf } = await supabase
 			.from('project_members')
 			.select('projects!inner(id, created_by)')
 			.eq('user_id', userId);
 
 		const invitedCount = memberOf?.filter((p) => p.projects.created_by !== userId).length || 0;
-
-		if (initiatedError || invitedError) {
-			console.error('Error fetching project stats:', initiatedError || invitedError);
-		}
 
 		return {
 			initiated: initiatedCount ?? 0,
@@ -60,87 +56,59 @@ export const load: PageServerLoad = async ({ locals: { supabase, session } }) =>
 		};
 	};
 
-	// PERBAIKAN: Tambahkan debug dan error handling yang lebih baik
-	const getFocusAnalytics = async (days = 7) => {
-		const endDate = new Date();
-		const startDate = new Date();
-		startDate.setDate(endDate.getDate() - (days - 1));
-		startDate.setHours(0, 0, 0, 0);
-
-		// Debug: Log parameters
-		console.log('Analytics parameters:', {
-			userId,
-			startDate: startDate.toISOString(),
-			endDate: endDate.toISOString(),
-			userTimezone
-		});
-
-		// Pertama, cek apakah ada data pomodoro_sessions untuk user ini
-		const { data: sessionCheck, error: sessionError } = await supabase
-			.from('pomodoro_sessions')
-			.select('id, user_id, mode, completed, start_time, duration')
-			.eq('user_id', userId)
-			.eq('mode', 'work')
-			.eq('completed', true)
-			.limit(5);
-
-		if (sessionError) {
-			console.error('Error checking pomodoro sessions:', sessionError);
-		} else {
-			console.log('Sample pomodoro sessions:', sessionCheck);
-		}
-
-		// Jalankan RPC function
-		const { data, error } = await supabase.rpc('get_personal_analytics', {
-			p_user_id: userId,
-			p_start_date: startDate.toISOString(),
-			p_end_date: endDate.toISOString(),
-			p_group_by_unit: 'day',
-			p_timezone: userTimezone
-		});
-
-		if (error) {
-			console.error('Error fetching focus analytics:', error);
-			console.error('RPC Error details:', {
-				code: error.code,
-				message: error.message,
-				details: error.details,
-				hint: error.hint
-			});
-			return [];
-		}
-
-		console.log('Analytics data received:', data);
-		return data || [];
-	};
-
-	// PERBAIKAN: Tambahkan function untuk mendapatkan profile
 	const getUserProfile = async () => {
 		const { data: profile, error } = await supabase
 			.from('profiles')
 			.select('*')
 			.eq('id', userId)
 			.single();
-
-		if (error) {
-			console.error('Error fetching user profile:', error);
-			return { username: 'User', avatar_url: null };
-		}
-
-		return profile;
+		if (error) console.error('Error fetching user profile:', error);
+		return profile || { username: 'User', avatar_url: null };
 	};
 
+	// Fungsi untuk mengambil semua data analitik dari RPC baru
+	const getFullAnalytics = async (days = 7) => {
+		const endDate = new Date();
+		const startDate = new Date();
+		startDate.setDate(endDate.getDate() - (days - 1));
+		startDate.setHours(0, 0, 0, 0);
+
+		const timeRangeParams = {
+			p_user_id: userId,
+			p_start_date: startDate.toISOString(),
+			p_end_date: endDate.toISOString(),
+			p_timezone: 'Asia/Jakarta'
+		};
+
+		const [projectResult, taskResult, timelineResult] = await Promise.all([
+			supabase.rpc('get_project_pomodoro_breakdown', timeRangeParams),
+			supabase.rpc('get_task_pomodoro_breakdown', { ...timeRangeParams, p_project_id: null }),
+			supabase.rpc('get_project_productivity_timeline', {
+				...timeRangeParams,
+				p_group_by_unit: 'day'
+			})
+		]);
+
+		// PERBAIKAN: Kelompokkan semua hasil ke dalam satu objek
+		return {
+			projectBreakdown: projectResult.data || [],
+			taskBreakdown: taskResult.data || [],
+			productivityTimeline: timelineResult.data || []
+		};
+	};
+
+	// Jalankan semua pengambilan data secara paralel
 	const [monthlyStats, projectStats, initialAnalytics, profile] = await Promise.all([
 		getTaskStats(),
 		getProjectStats(),
-		getFocusAnalytics(7),
+		getFullAnalytics(7), // Default: load data 7 hari terakhir
 		getUserProfile()
 	]);
 
 	return {
 		monthlyStats,
 		projectStats,
-		initialAnalytics,
+		initialAnalytics, // Berisi { projectBreakdown, taskBreakdown, productivityTimeline }
 		profile,
 		session
 	};
