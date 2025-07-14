@@ -1,27 +1,23 @@
 <script lang="ts">
-	// 1. HAPUS SEMUA IMPORT LAMA, GUNAKAN YANG MODERN
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { createEventDispatcher } from 'svelte';
 	import type { Session } from '@supabase/supabase-js';
-	import { User, LayoutDashboard, ListTodo, Clock, Trophy } from '@lucide/svelte'; // <-- Tambahkan Trophy
+	import { User, LayoutDashboard, ListTodo, Clock, Trophy, Users } from '@lucide/svelte';
 
-	// 2. GUNAKAN $props() UNTUK MENERIMA DATA (CARA SVELTE 5)
-	let { userName, userAvatar, session, isSidebarOpen } = $props<{
+	// Props sudah benar, menerima userRole
+	let { userName, userAvatar, session, isSidebarOpen, userRole } = $props<{
 		userName: string | null;
 		userAvatar: string | null;
 		session: Session | null;
 		isSidebarOpen: boolean;
+		userRole: string | null;
 	}>();
 
 	const dispatch = createEventDispatcher();
-
-	// 3. STATE LOKAL UNTUK UI (PAKAI RUNES)
 	let isTasksDropdownOpen = $state(false);
 
-	// 4. FUNGSI-FUNGSI YANG SUDAH DIRAPIKAN
 	function closeSidebarOnMobile() {
-		// Beri tahu parent (layout) untuk menutup sidebar
 		if (window.innerWidth < 768) {
 			dispatch('close');
 		}
@@ -37,21 +33,18 @@
 	}
 
 	function openAddProjectModal() {
-		// Beri tahu parent (layout) untuk membuka modal
 		dispatch('openAddProjectModal');
 		closeSidebarOnMobile();
 	}
 </script>
 
-<!-- ======================================================= -->
-<!-- BAGIAN HTML LENGKAP (TIDAK ADA YANG DIHAPUS) -->
-<!-- ======================================================= -->
 <aside
 	class="fixed inset-y-0 left-0 z-50 w-72 bg-gray-900 text-white flex flex-col p-6 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:w-72"
 	class:translate-x-0={isSidebarOpen}
 >
 	<div class="flex flex-col items-center mb-8 text-center">
-		<button on:click={() => navigateTo('/profile')}>
+		<!-- PERBAIKAN: on:click diubah menjadi onclick -->
+		<button onclick={() => navigateTo('/profile')}>
 			{#if userAvatar}
 				<img
 					src={userAvatar}
@@ -77,8 +70,9 @@
 	</div>
 
 	<nav class="flex-1 space-y-2">
+		<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 		<button
-			on:click={() => navigateTo('/profile')}
+			onclick={() => navigateTo('/profile')}
 			class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url
 				.pathname === '/profile'
 				? 'bg-purple-600 text-white shadow-lg'
@@ -88,8 +82,9 @@
 			Profil
 		</button>
 
+		<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 		<button
-			on:click={() => navigateTo('/projects')}
+			onclick={() => navigateTo('/projects')}
 			class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url.pathname.startsWith(
 				'/projects'
 			)
@@ -100,10 +95,10 @@
 			Proyek
 		</button>
 
-		<!-- Dropdown Tugas (sudah benar) -->
 		<div class="space-y-1">
+			<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 			<button
-				on:click={toggleTasksDropdown}
+				onclick={toggleTasksDropdown}
 				class="w-full flex items-center justify-between p-3 rounded-xl font-semibold text-gray-300 hover:bg-gray-800"
 			>
 				<span class="flex items-center">
@@ -123,18 +118,19 @@
 
 			{#if isTasksDropdownOpen}
 				<div class="ml-6 space-y-1">
+					<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 					<button
-						on:click={() => navigateTo('/tasks/to-do')}
+						onclick={() => navigateTo('/tasks/to-do')}
 						class="block w-full text-left px-4 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
 						class:bg-purple-700={$page.url.pathname === '/tasks/to-do'}>• To Do</button
 					>
 					<button
-						on:click={() => navigateTo('/tasks/in-progress')}
+						onclick={() => navigateTo('/tasks/in-progress')}
 						class="block w-full text-left px-4 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
 						class:bg-purple-700={$page.url.pathname === '/tasks/in-progress'}>• In Progress</button
 					>
 					<button
-						on:click={() => navigateTo('/tasks/done')}
+						onclick={() => navigateTo('/tasks/done')}
 						class="block w-full text-left px-4 py-2 rounded-md text-sm text-gray-300 hover:bg-gray-700"
 						class:bg-purple-700={$page.url.pathname === '/tasks/done'}>• Done</button
 					>
@@ -144,8 +140,24 @@
 
 		<hr class="border-gray-700" />
 
+		<!-- Menu Tim sekarang akan muncul jika userRole adalah 'supervisor' -->
+		{#if userRole === 'supervisor'}
+			<!-- PERBAIKAN: on:click diubah menjadi onclick -->
+			<button
+				onclick={() => navigateTo('/team')}
+				class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url
+					.pathname === '/team'
+					? 'bg-purple-600 text-white shadow-lg'
+					: 'text-gray-300 hover:bg-gray-800'}"
+			>
+				<Users class="w-5 h-5 mr-3" />
+				Tim
+			</button>
+		{/if}
+
+		<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 		<button
-			on:click={() => navigateTo('/tools/pomodoro')}
+			onclick={() => navigateTo('/tools/pomodoro')}
 			class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url
 				.pathname === '/tools/pomodoro'
 				? 'bg-purple-600 text-white shadow-lg'
@@ -155,11 +167,9 @@
 			Pomodoro
 		</button>
 
-		<!-- ======================================================= -->
-		<!-- TOMBOL BARU UNTUK LEADERBOARD -->
-		<!-- ======================================================= -->
+		<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 		<button
-			on:click={() => navigateTo('/leaderboard')}
+			onclick={() => navigateTo('/leaderboard')}
 			class="w-full flex items-center p-3 rounded-xl font-semibold transition-all {$page.url
 				.pathname === '/leaderboard'
 				? 'bg-purple-600 text-white shadow-lg'
@@ -171,8 +181,9 @@
 	</nav>
 
 	<div class="mt-auto">
+		<!-- PERBAIKAN: on:click diubah menjadi onclick -->
 		<button
-			on:click={openAddProjectModal}
+			onclick={openAddProjectModal}
 			class="w-full flex items-center justify-center p-3 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 transition-all"
 		>
 			<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"

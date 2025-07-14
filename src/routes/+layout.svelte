@@ -1,5 +1,5 @@
 <script lang="ts">
-	// 1. IMPORTS
+	// 1. IMPORTS (Tidak ada perubahan)
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
@@ -14,10 +14,10 @@
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import { Toaster } from '$lib/toast';
 
-	// 2. TERIMA DATA DARI SERVER
+	// 2. TERIMA DATA DARI SERVER (Tidak ada perubahan)
 	let { data } = $props<LayoutData>();
 
-	// 3. BUAT SUPABASE CLIENT
+	// 3. BUAT SUPABASE CLIENT (Tidak ada perubahan)
 	const supabase = createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
 		global: { fetch },
 		cookies: {
@@ -37,10 +37,10 @@
 		}
 	});
 
-	// 4. ISI STORE
+	// 4. ISI STORE (Tidak ada perubahan)
 	supabaseClientStore.set(supabase);
 
-	// 5. LISTENER AUTH
+	// 5. LISTENER AUTH (Tidak ada perubahan)
 	onMount(() => {
 		const {
 			data: { subscription }
@@ -52,7 +52,7 @@
 		return () => subscription.unsubscribe();
 	});
 
-	// 6. STATE LOKAL & EFFECTS
+	// 6. STATE LOKAL & EFFECTS (Tidak ada perubahan)
 	let isEditProfileModalOpen = $state(false);
 	let isAddProjectModalOpen = $state(false);
 	let isSidebarOpen = $state(false);
@@ -74,7 +74,7 @@
 		}
 	});
 
-	// 7. FUNGSI-FUNGSI HELPER
+	// 7. FUNGSI-FUNGSI HELPER (Tidak ada perubahan)
 	const todayDate = new Date().toLocaleDateString('id-ID', {
 		weekday: 'long',
 		year: 'numeric',
@@ -129,12 +129,12 @@
 			class:opacity-100={isSidebarOpen}
 			class:opacity-0={!isSidebarOpen}
 			class:pointer-events-none={!isSidebarOpen}
-			on:click={() => (isSidebarOpen = false)}
+			onclick={() => (isSidebarOpen = false)}
 		></div>
 
 		<button
 			class="fixed top-4 left-4 z-50 p-2 rounded-md bg-gray-800 text-white md:hidden"
-			on:click={() => (isSidebarOpen = !isSidebarOpen)}
+			onclick={() => (isSidebarOpen = !isSidebarOpen)}
 		>
 			<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
 				><path
@@ -146,10 +146,14 @@
 			>
 		</button>
 
+		<!-- ======================================================= -->
+		<!-- PERBAIKAN UTAMA DI SINI: Teruskan userRole ke Sidebar -->
+		<!-- ======================================================= -->
 		<Sidebar
 			session={data.session}
 			userName={data.profile?.username || data.session.user.email}
 			userAvatar={data.profile?.avatar_url || null}
+			userRole={data.profile?.role}
 			bind:isSidebarOpen
 			on:openAddProjectModal={() => (isAddProjectModalOpen = true)}
 			on:close={() => (isSidebarOpen = false)}
@@ -175,12 +179,12 @@
 							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
 						<button
-							on:click={() => (isEditProfileModalOpen = true)}
+							onclick={() => (isEditProfileModalOpen = true)}
 							class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
 							>Edit Profil</button
 						>
 						<button
-							on:click={handleLogout}
+							onclick={handleLogout}
 							class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
 							>Logout</button
 						>
@@ -192,12 +196,12 @@
 						>Welcome, {data.profile?.username || data.session.user.email}!</span
 					>
 					<button
-						on:click={() => (isEditProfileModalOpen = true)}
+						onclick={() => (isEditProfileModalOpen = true)}
 						class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
 						>Edit Profil</button
 					>
 					<button
-						on:click={handleLogout}
+						onclick={handleLogout}
 						class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
 						>Logout</button
 					>

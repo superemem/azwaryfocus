@@ -1,49 +1,31 @@
 // src/routes/team/+page.server.ts
-import { redirect } from '@sveltejs/kit';
+import { redirect, error } from '@sveltejs/kit'; // <-- 1. Tambahkan import 'error'
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals: { supabase, session } }) => {
-	// Jika tidak ada sesi, lempar ke halaman login
 	if (!session) {
 		throw redirect(303, '/login');
 	}
 
-	// Ambil semua profil pengguna terlebih dahulu
-	const { data: profiles, error: profileError } = await supabase
+	// 2. Ambil profil user yang sedang login untuk cek role
+	const { data: profile } = await supabase
 		.from('profiles')
-		.select('id, username, avatar_url, job_title');
+		.select('role')
+		.eq('id', session.user.id)
+		.single();
 
-	if (profileError) {
-		console.error('Error fetching profiles:', profileError);
+	// 3. Cek apakah role-nya bukan 'supervisor'. Jika ya, lempar error 403 (Forbidden)
+	if (profile?.role !== 'supervisor') {
+		throw error(403, 'Akses Ditolak: Anda harus menjadi Supervisor untuk melihat halaman ini.');
+	}
+
+	// Panggil fungsi RPC untuk mendapatkan semua pengguna dan statistik mereka (kode ini tetap sama)
+	const { data: teamMembers, error: rpcError } = await supabase.rpc('get_all_users_stats');
+
+	if (rpcError) {
+		console.error('Error fetching team stats:', rpcError);
 		return { teamMembers: [] };
 	}
 
-	// Ambil semua data agregat dalam beberapa query besar, bukan satu per satu
-	const [{ data: projectCountsData }, { data: doneTasksData }] = await Promise.all([
-		supabase.rpc('count_projects_by_user'), // Asumsi ada RPC untuk ini
-		supabase.rpc('count_done_tasks_by_user') // Asumsi ada RPC untuk ini
-	]);
-
-	// Jika tidak ada RPC, kita bisa gunakan cara manual yang lebih efisien:
-	// const { data: allProjects } = await supabase.from('projects').select('created_by');
-	// const { data: allDoneTasks } = await supabase.from('tasks').select('created_by, columns!inner(name)').eq('columns.name', 'Done');
-
-	// Buat map untuk lookup cepat
-	const projectCounts = new Map(
-		projectCountsData?.map((item) => [item.user_id, item.project_count]) ?? []
-	);
-	const doneTaskCounts = new Map(
-		doneTasksData?.map((item) => [item.user_id, item.task_count]) ?? []
-	);
-
-	// Gabungkan data profil dengan data statistik
-	const teamMembers = profiles.map((member) => ({
-		...member,
-		projectCount: projectCounts.get(member.id) || 0,
-		doneTaskCount: doneTaskCounts.get(member.id) || 0
-	}));
-
-	return {
-		teamMembers
-	};
+	return { teamMembers };
 };
