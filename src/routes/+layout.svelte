@@ -1,9 +1,13 @@
 <script lang="ts">
-	// 1. IMPORTS (Tidak ada perubahan)
+	// 1. IMPORTS
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+	import {
+		PUBLIC_SUPABASE_URL,
+		PUBLIC_SUPABASE_ANON_KEY,
+		PUBLIC_VAPID_PUBLIC_KEY
+	} from '$env/static/public';
 	import { createBrowserClient, isBrowser, parse, serialize } from '@supabase/ssr';
 	import { supabaseClientStore } from '$lib/stores/supabaseStore';
 	import type { LayoutData } from './$types';
@@ -12,12 +16,14 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import EditProfileModal from '$lib/components/EditProfileModal.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
-	import { Toaster } from '$lib/toast';
+	import { Toaster, toast } from '$lib/toast';
+	// PASTIKAN IMPORT INI ADA
+	import { BellRing, Send } from '@lucide/svelte';
 
-	// 2. TERIMA DATA DARI SERVER (Tidak ada perubahan)
+	// 2. TERIMA DATA DARI SERVER
 	let { data } = $props<LayoutData>();
 
-	// 3. BUAT SUPABASE CLIENT (Tidak ada perubahan)
+	// 3. BUAT SUPABASE CLIENT
 	const supabase = createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
 		global: { fetch },
 		cookies: {
@@ -37,11 +43,24 @@
 		}
 	});
 
-	// 4. ISI STORE (Tidak ada perubahan)
+	// 4. ISI STORE
 	supabaseClientStore.set(supabase);
 
-	// 5. LISTENER AUTH (Tidak ada perubahan)
+	// 5. LISTENER AUTH & SERVICE WORKER
 	onMount(() => {
+		// Pendaftaran Service Worker
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker
+				.register('/service-worker.js', { type: 'module' })
+				.then((registration) => {
+					console.log('Service Worker berhasil didaftarkan');
+				})
+				.catch((error) => {
+					console.error('Pendaftaran Service Worker gagal:', error);
+				});
+		}
+
+		// Listener Auth State
 		const {
 			data: { subscription }
 		} = supabase.auth.onAuthStateChange((event, newSession) => {
@@ -52,7 +71,7 @@
 		return () => subscription.unsubscribe();
 	});
 
-	// 6. STATE LOKAL & EFFECTS (Tidak ada perubahan)
+	// 6. STATE LOKAL & EFFECTS
 	let isEditProfileModalOpen = $state(false);
 	let isAddProjectModalOpen = $state(false);
 	let isSidebarOpen = $state(false);
@@ -74,7 +93,7 @@
 		}
 	});
 
-	// 7. FUNGSI-FUNGSI HELPER (Tidak ada perubahan)
+	// 7. FUNGSI-FUNGSI HELPER
 	const todayDate = new Date().toLocaleDateString('id-ID', {
 		weekday: 'long',
 		year: 'numeric',
@@ -119,6 +138,88 @@
 			invalidateAll();
 		}
 	}
+
+	// Fungsi untuk mengaktifkan notifikasi
+	function urlBase64ToUint8Array(base64String: string) {
+		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+		const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+		const rawData = window.atob(base64);
+		const outputArray = new Uint8Array(rawData.length);
+		for (let i = 0; i < rawData.length; ++i) {
+			outputArray[i] = rawData.charCodeAt(i);
+		}
+		return outputArray;
+	}
+
+	async function subscribeToNotifications() {
+		if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+			toast.error('Browser Anda tidak mendukung notifikasi.');
+			return;
+		}
+
+		const permission = await Notification.requestPermission();
+		if (permission !== 'granted') {
+			toast.warning('Anda tidak mengizinkan notifikasi.');
+			return;
+		}
+
+		const registration = await navigator.serviceWorker.ready;
+		const subscription = await registration.pushManager.subscribe({
+			userVisibleOnly: true,
+			applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_PUBLIC_KEY)
+		});
+
+		const userId = data.session?.user?.id;
+		if (!userId) {
+			toast.error('Sesi tidak ditemukan. Silakan login ulang.');
+			return;
+		}
+
+		const { error } = await supabase.from('push_subscriptions').insert({
+			user_id: userId,
+			subscription_object: subscription
+		});
+
+		if (error) {
+			if (error.code === '23505') {
+				toast.success('Notifikasi sudah aktif di perangkat ini.');
+			} else {
+				toast.error('Gagal menyimpan langganan notifikasi.');
+			}
+		} else {
+			toast.success('Berhasil mengaktifkan notifikasi!');
+		}
+	}
+
+	// PASTIKAN FUNGSI INI ADA
+	async function sendTestNotification() {
+		const userId = data.session?.user?.id;
+		if (!userId) {
+			toast.error('Anda harus login untuk mengirim notifikasi.');
+			return;
+		}
+
+		// PERBAIKAN: Menggunakan toast() biasa, bukan toast.info()
+		toast('Mengirim notifikasi tes...');
+
+		// Panggil Edge Function 'send-notification'
+		const { error } = await supabase.functions.invoke('send-notification', {
+			body: {
+				user_id: userId,
+				payload: {
+					title: 'Tes Notifikasi Berhasil! ✅',
+					body: 'Jika Anda melihat ini, berarti semuanya bekerja dengan baik.',
+					icon: '/favicon.png'
+				}
+			}
+		});
+
+		if (error) {
+			toast.error(`Gagal mengirim notifikasi: ${error.message}`);
+		} else {
+			toast.success('Perintah notifikasi berhasil dikirim!');
+		}
+	}
 </script>
 
 <!-- BAGIAN HTML LENGKAP -->
@@ -146,9 +247,6 @@
 			>
 		</button>
 
-		<!-- ======================================================= -->
-		<!-- PERBAIKAN UTAMA DI SINI: Teruskan userRole ke Sidebar -->
-		<!-- ======================================================= -->
 		<Sidebar
 			session={data.session}
 			userName={data.profile?.username || data.session.user.email}
@@ -179,6 +277,21 @@
 							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
 						<button
+							onclick={subscribeToNotifications}
+							title="Aktifkan Notifikasi"
+							class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
+						>
+							<BellRing class="w-5 h-5" />
+						</button>
+						<!-- PASTIKAN TOMBOL INI ADA -->
+						<button
+							onclick={sendTestNotification}
+							title="Kirim Notifikasi Tes"
+							class="p-2 rounded-xl shadow-lg bg-blue-500 text-white hover:bg-blue-600"
+						>
+							<Send class="w-5 h-5" />
+						</button>
+						<button
 							onclick={() => (isEditProfileModalOpen = true)}
 							class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
 							>Edit Profil</button
@@ -195,6 +308,21 @@
 					<span class="text-gray-600 font-semibold hidden md:block"
 						>Welcome, {data.profile?.username || data.session.user.email}!</span
 					>
+					<button
+						onclick={subscribeToNotifications}
+						title="Aktifkan Notifikasi"
+						class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
+					>
+						<BellRing class="w-5 h-5" />
+					</button>
+					<!-- PASTIKAN TOMBOL INI ADA -->
+					<button
+						onclick={sendTestNotification}
+						title="Kirim Notifikasi Tes"
+						class="p-2 rounded-xl shadow-lg bg-blue-500 text-white hover:bg-blue-600"
+					>
+						<Send class="w-5 h-5" />
+					</button>
 					<button
 						onclick={() => (isEditProfileModalOpen = true)}
 						class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"

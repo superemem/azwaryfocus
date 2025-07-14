@@ -3,7 +3,7 @@
 	import { supabaseClientStore } from '$lib/stores/supabaseStore';
 	import type { PageData } from './$types';
 	import PomodoroTimer from '$lib/components/PomodoroTimer.svelte';
-	import toast from 'svelte-5-french-toast';
+	import { toast } from 'svelte-5-french-toast'; // Menggunakan toast dari user
 	import { Settings, Trophy } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
@@ -18,6 +18,16 @@
 	let currentSessionInfo = $state<any | null>(null);
 
 	let timerRef: PomodoroTimer;
+
+	// <<< BARU: Fungsi untuk mengirim perintah ke Service Worker >>>
+	function postMessageToSW(message: object) {
+		if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+			navigator.serviceWorker.controller.postMessage(message);
+		} else {
+			// Menggunakan toast yang diimpor user
+			toast.error('Service Worker tidak aktif. Notifikasi mungkin tidak berfungsi.');
+		}
+	}
 
 	// 3. FUNGSI-FUNGSI AKSI
 
@@ -35,6 +45,15 @@
 		};
 		timerRef.changeMode('work');
 		timerRef.startTimerExtern();
+
+		// <<< BARU: Kirim perintah ke Service Worker untuk notifikasi yang andal >>>
+		const workDuration = data.profile?.pomodoro_settings?.workDuration || 25;
+		const notificationPayload = {
+			duration: workDuration * 60 * 1000, // Kirim dalam milidetik
+			title: 'Waktunya Istirahat! 🧘',
+			body: `Sesi fokus untuk "${task.title}" telah selesai.`
+		};
+		postMessageToSW({ type: 'START_TIMER', payload: notificationPayload });
 	}
 
 	function startSessionById(taskId: string) {
@@ -84,6 +103,8 @@
 
 		if (currentSessionInfo && currentSessionInfo.taskId === task.id) {
 			timerRef.resetTimerExtern();
+			// <<< BARU: Batalkan notifikasi di Service Worker jika tugas selesai lebih awal >>>
+			postMessageToSW({ type: 'STOP_TIMER' });
 			currentSessionInfo = null;
 		}
 
@@ -94,7 +115,6 @@
 		toast.success(`Tugas "${task.title}" selesai!`);
 	}
 
-	// PERBAIKAN: Menggunakan try...finally untuk memastikan state di-reset
 	async function handleSessionComplete(e: CustomEvent) {
 		const { mode, duration, completed } = e.detail;
 		if (!currentSessionInfo) return;
@@ -151,15 +171,12 @@
 			console.error('Error handling session completion:', err);
 			toast.error('Terjadi kesalahan saat menyelesaikan sesi.');
 		} finally {
-			// Blok ini dijamin akan selalu berjalan, baik ada error maupun tidak.
 			currentSessionInfo = null;
 		}
 	}
 </script>
 
-<!-- ======================================================= -->
 <!-- BAGIAN HTML (TIDAK ADA PERUBAHAN) -->
-<!-- ======================================================= -->
 <div class="p-6 max-w-4xl mx-auto space-y-8">
 	<div class="flex justify-between items-center">
 		<h1 class="text-4xl font-bold text-gray-800">Pomodoro Timer</h1>
