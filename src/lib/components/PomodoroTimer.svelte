@@ -6,7 +6,6 @@
 	const dispatch = createEventDispatcher();
 
 	// 1. TERIMA PENGATURAN & DATA DARI PARENT
-	// PERBAIKAN: Menambahkan properti suara ke settings
 	let { settings, workSessionsToday } = $props<{
 		settings?: {
 			work: number;
@@ -30,14 +29,14 @@
 	let timeRemaining = $state(durations.work);
 	let isRunning = $state(false);
 	let currentMode: 'work' | 'short-break' | 'long-break' = $state('work');
-	let isChoosingBreak = $state(false);
+	// PERBAIKAN: State isChoosingBreak dihapus karena menyebabkan bug logika
+	// let isChoosingBreak = $state(false);
 
 	// "Jam Dinding" untuk timer pintar
 	let targetEndTime = 0;
 	let intervalId: any = null;
 	let originalTitle = '';
 
-	// PERBAIKAN: Referensi untuk audio ambient dan notifikasi
 	let ambientAudio: HTMLAudioElement;
 	let notificationAudio: HTMLAudioElement;
 
@@ -49,7 +48,6 @@
 	);
 	const displayTime = $derived(formatTime(timeRemaining));
 
-	// Efek untuk update judul tab
 	onMount(() => {
 		if (browser) originalTitle = document.title;
 	});
@@ -59,14 +57,15 @@
 			if (isRunning) {
 				const modeText = currentMode === 'work' ? 'Fokus' : 'Istirahat';
 				document.title = `${displayTime} - ${modeText}`;
-			} else if (!isChoosingBreak) {
+			} else {
 				if (document.title !== originalTitle) document.title = originalTitle;
 			}
 		}
 	});
 
+	// PERBAIKAN: Efek disederhanakan setelah menghapus isChoosingBreak
 	$effect(() => {
-		if (!isRunning && !isChoosingBreak) {
+		if (!isRunning) {
 			timeRemaining = durations[currentMode];
 		}
 	});
@@ -84,7 +83,6 @@
 		return `${m}:${s}`;
 	}
 
-	// --- FUNGSI-FUNGSI SUARA YANG BARU ---
 	function manageAmbientSound(action: 'play' | 'stop') {
 		if (!settings?.workSound || settings.workSound === 'none' || !browser) return;
 
@@ -115,9 +113,7 @@
 			notificationAudio.play().catch(() => {});
 		}
 	}
-	// ------------------------------------
 
-	// Logika Timer Pintar
 	function tick() {
 		const remainingMs = targetEndTime - Date.now();
 		if (remainingMs <= 0) {
@@ -135,7 +131,7 @@
 			targetEndTime = Date.now() + timeRemaining * 1000;
 		}
 		intervalId = setInterval(tick, 250);
-		manageAmbientSound('play'); // Panggil suara ambient
+		manageAmbientSound('play');
 		dispatch('timerStart', { mode: currentMode });
 	}
 
@@ -144,26 +140,24 @@
 		isRunning = false;
 		clearInterval(intervalId);
 		intervalId = null;
-		manageAmbientSound('stop'); // Hentikan suara ambient
+		manageAmbientSound('stop');
 		dispatch('timerPause', { mode: currentMode });
 	}
 
+	// PERBAIKAN: Logika completeSession disederhanakan
 	function completeSession() {
 		pauseTimer();
 		const sessionDuration = durations[currentMode] * 1000;
 		dispatch('sessionComplete', { mode: currentMode, duration: sessionDuration, completed: true });
-		playNotificationSound(); // Panggil suara notifikasi
+		playNotificationSound();
 
-		if (currentMode === 'work') {
-			isChoosingBreak = true;
-			if (browser) document.title = 'Sesi Selesai!';
-		} else {
-			changeMode('work');
-		}
+		// Setelah sesi apapun selesai, kembalikan ke mode 'work' dan biarkan user memilih.
+		// Ini akan membuat tombol "Lanjutkan" di halaman utama aktif kembali.
+		changeMode('work');
 	}
 
+	// PERBAIKAN: Logika startBreak disederhanakan
 	function startBreak(mode: 'short-break' | 'long-break') {
-		isChoosingBreak = false;
 		changeMode(mode);
 		startTimer();
 	}
@@ -173,7 +167,6 @@
 		currentMode = mode;
 		timeRemaining = durations[mode];
 		targetEndTime = 0;
-		isChoosingBreak = false;
 	}
 
 	export function startTimerExtern() {
@@ -182,7 +175,6 @@
 	export function resetTimerExtern() {
 		pauseTimer();
 		targetEndTime = 0;
-		isChoosingBreak = false;
 		timeRemaining = durations[currentMode];
 		dispatch('timerStop', { mode: currentMode });
 	}
@@ -227,11 +219,12 @@
 
 	<!-- Tombol Istirahat -->
 	<div class="break-buttons">
-		<button class="break-btn" disabled={!isChoosingBreak} onclick={() => startBreak('short-break')}>
+		<!-- PERBAIKAN: Tombol istirahat sekarang dinonaktifkan jika timer sedang berjalan -->
+		<button class="break-btn" disabled={isRunning} onclick={() => startBreak('short-break')}>
 			<Coffee size={16} />
 			<span>Istirahat {settings?.shortBreak || 5} mnt</span>
 		</button>
-		<button class="break-btn" disabled={!isChoosingBreak} onclick={() => startBreak('long-break')}>
+		<button class="break-btn" disabled={isRunning} onclick={() => startBreak('long-break')}>
 			<Coffee size={16} />
 			<span>Istirahat {settings?.longBreak || 15} mnt</span>
 		</button>
@@ -248,7 +241,6 @@
 	</div>
 </div>
 
-<!-- PERBAIKAN: Dua elemen audio untuk fungsi yang berbeda -->
 <audio bind:this={ambientAudio} preload="auto"></audio>
 <audio bind:this={notificationAudio} preload="auto"></audio>
 
@@ -352,8 +344,8 @@
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease-in-out;
-		background-color: #4b5563;
-		color: #d1d5db;
+		background-color: #e5e7eb; /* Warna default saat disabled */
+		color: #6b7280;
 	}
 
 	.break-btn:not(:disabled) {

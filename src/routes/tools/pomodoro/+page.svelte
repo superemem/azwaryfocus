@@ -4,8 +4,6 @@
 	import type { PageData } from './$types';
 	import PomodoroTimer from '$lib/components/PomodoroTimer.svelte';
 	import toast from 'svelte-5-french-toast';
-	import { onMount } from 'svelte';
-	// PERBAIKAN: Impor ikon Trophy
 	import { Settings, Trophy } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
@@ -17,11 +15,11 @@
 	let inProgressTasks = $state(data.inProgressTasks);
 	let stats = $state(data.initialStats);
 	let activeTask = $state<any | null>(null);
-	let currentSessionInfo = $state<any>(null);
+	let currentSessionInfo = $state<any | null>(null);
 
 	let timerRef: PomodoroTimer;
 
-	// 3. FUNGSI-FUNGSI AKSI (DENGAN PERBAIKAN)
+	// 3. FUNGSI-FUNGSI AKSI
 
 	function startSession(task: any) {
 		if (currentSessionInfo) {
@@ -50,7 +48,6 @@
 		const supabase = get(supabaseClientStore);
 		if (!supabase) return;
 
-		// 1. Cari ID kolom 'In Progress' yang benar untuk proyek tugas ini
 		const { data: column, error } = await supabase
 			.from('columns')
 			.select('id')
@@ -63,7 +60,6 @@
 			return;
 		}
 
-		// 2. Lanjutkan dengan ID kolom yang sudah benar
 		todoTasks = todoTasks.filter((t) => t.id !== task.id);
 		inProgressTasks.push(task);
 		startSession(task);
@@ -74,11 +70,10 @@
 		const supabase = get(supabaseClientStore);
 		if (!supabase) return;
 
-		// 1. Cari ID kolom 'Done' yang benar untuk proyek tugas ini
 		const { data: column, error } = await supabase
 			.from('columns')
 			.select('id')
-			.eq('project_id', task.project_id) // Kuncinya di sini
+			.eq('project_id', task.project_id)
 			.eq('name', 'Done')
 			.single();
 
@@ -87,74 +82,87 @@
 			return;
 		}
 
-		// Hentikan timer jika tugas yang selesai adalah tugas yang aktif
 		if (currentSessionInfo && currentSessionInfo.taskId === task.id) {
 			timerRef.resetTimerExtern();
 			currentSessionInfo = null;
 		}
 
-		// Update UI secara lokal
 		inProgressTasks = inProgressTasks.filter((t) => t.id !== task.id);
 		if (activeTask?.id === task.id) activeTask = null;
 
-		// 2. Update task dengan ID kolom yang sudah benar
 		await supabase.from('tasks').update({ column_id: column.id }).eq('id', task.id);
 		toast.success(`Tugas "${task.title}" selesai!`);
 	}
 
+	// PERBAIKAN: Menggunakan try...finally untuk memastikan state di-reset
 	async function handleSessionComplete(e: CustomEvent) {
 		const { mode, duration, completed } = e.detail;
 		if (!currentSessionInfo) return;
-		const supabase = get(supabaseClientStore);
-		if (!supabase) return;
-		const {
-			data: { user }
-		} = await supabase.auth.getUser();
-		if (!user) return toast.error('Sesi tidak valid.');
-		const sessionData = {
-			id: currentSessionInfo.id,
-			user_id: user.id,
-			task_id: currentSessionInfo.taskId,
-			start_time: new Date(currentSessionInfo.startTime).toISOString(),
-			end_time: new Date().toISOString(),
-			duration: Math.round(duration),
-			mode,
-			completed,
-			interrupted: !completed
-		};
-		const { error } = await supabase.from('pomodoro_sessions').insert(sessionData);
-		if (error) {
-			toast.error('Gagal menyimpan sesi.');
-		} else if (mode === 'work' && completed) {
-			stats.workSessions++;
-			stats.totalWorkMinutes += Math.floor(duration / 60000);
-			toast.success('Sesi kerja selesai! Waktunya istirahat.');
-			completeAudio?.play().catch(() => {});
-			const taskIndex = inProgressTasks.findIndex((t) => t.id === currentSessionInfo!.taskId);
-			if (taskIndex > -1) {
-				inProgressTasks[taskIndex].session_count =
-					(inProgressTasks[taskIndex].session_count || 0) + 1;
+
+		try {
+			const supabase = get(supabaseClientStore);
+			if (!supabase) return;
+
+			const {
+				data: { user }
+			} = await supabase.auth.getUser();
+			if (!user) {
+				toast.error('Sesi tidak valid.');
+				return;
 			}
-			await supabase.rpc('increment', {
-				table_name: 'tasks',
-				row_id: currentSessionInfo.taskId,
-				x: 1,
-				field_name: 'session_count'
-			});
-		} else if (mode !== 'work') {
-			toast.info('Waktu istirahat selesai!');
+
+			const sessionData = {
+				id: currentSessionInfo.id,
+				user_id: user.id,
+				task_id: currentSessionInfo.taskId,
+				start_time: new Date(currentSessionInfo.startTime).toISOString(),
+				end_time: new Date().toISOString(),
+				duration: Math.round(duration),
+				mode,
+				completed,
+				interrupted: !completed
+			};
+
+			const { error } = await supabase.from('pomodoro_sessions').insert(sessionData);
+
+			if (error) {
+				toast.error('Gagal menyimpan sesi.');
+			} else if (mode === 'work' && completed) {
+				stats.workSessions++;
+				stats.totalWorkMinutes += Math.floor(duration / 60000);
+				toast.success('Sesi kerja selesai! Waktunya istirahat.');
+
+				const taskIndex = inProgressTasks.findIndex((t) => t.id === currentSessionInfo!.taskId);
+				if (taskIndex > -1) {
+					inProgressTasks[taskIndex].session_count =
+						(inProgressTasks[taskIndex].session_count || 0) + 1;
+				}
+
+				await supabase.rpc('increment', {
+					table_name: 'tasks',
+					row_id: currentSessionInfo.taskId,
+					x: 1,
+					field_name: 'session_count'
+				});
+			} else if (mode !== 'work') {
+				toast.info('Waktu istirahat selesai!');
+			}
+		} catch (err) {
+			console.error('Error handling session completion:', err);
+			toast.error('Terjadi kesalahan saat menyelesaikan sesi.');
+		} finally {
+			// Blok ini dijamin akan selalu berjalan, baik ada error maupun tidak.
+			currentSessionInfo = null;
 		}
-		currentSessionInfo = null;
 	}
 </script>
 
 <!-- ======================================================= -->
-<!-- BAGIAN HTML (DENGAN PERBAIKAN UI) -->
+<!-- BAGIAN HTML (TIDAK ADA PERUBAHAN) -->
 <!-- ======================================================= -->
 <div class="p-6 max-w-4xl mx-auto space-y-8">
 	<div class="flex justify-between items-center">
 		<h1 class="text-4xl font-bold text-gray-800">Pomodoro Timer</h1>
-		<!-- PERBAIKAN: Tombol Pengaturan & Leaderboard -->
 		<div class="flex items-center gap-3">
 			<button
 				onclick={() => goto('/settings')}
@@ -173,7 +181,6 @@
 		</div>
 	</div>
 
-	<!-- Statistik Keseluruhan -->
 	<div class="bg-white p-4 rounded-lg shadow-sm">
 		<h3 class="font-semibold text-gray-800 mb-2">Statistik Hari Ini</h3>
 		<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -200,7 +207,6 @@
 		</div>
 	</div>
 
-	<!-- Timer Bar yang Compact -->
 	<div class="mx-auto w-full">
 		<PomodoroTimer
 			bind:this={timerRef}
@@ -232,7 +238,6 @@
 	{/if}
 
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-		<!-- Kolom To Do -->
 		<div class="bg-white p-4 rounded-lg shadow-sm">
 			<h3 class="font-semibold text-gray-800 mb-4 text-lg">Rencana Tugas ({todoTasks.length})</h3>
 			{#if todoTasks.length === 0}
@@ -253,7 +258,6 @@
 			{/if}
 		</div>
 
-		<!-- Kolom In Progress -->
 		<div class="bg-white p-4 rounded-lg shadow-sm">
 			<h3 class="font-semibold text-gray-800 mb-4 text-lg">
 				Sedang Dikerjakan ({inProgressTasks.length})
