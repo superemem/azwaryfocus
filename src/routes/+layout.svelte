@@ -17,8 +17,9 @@
 	import EditProfileModal from '$lib/components/EditProfileModal.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import { Toaster, toast } from '$lib/toast';
-	// PASTIKAN IMPORT INI ADA
 	import { BellRing, Send } from '@lucide/svelte';
+	// <<< BARU: Impor komponen notifikasi internal
+	import NotificationBell from '$lib/components/NotificationBell.svelte';
 
 	// 2. TERIMA DATA DARI SERVER
 	let { data } = $props<LayoutData>();
@@ -191,7 +192,7 @@
 		}
 	}
 
-	// PASTIKAN FUNGSI INI ADA
+	// Fungsi untuk mengirim notifikasi tes
 	async function sendTestNotification() {
 		const userId = data.session?.user?.id;
 		if (!userId) {
@@ -199,10 +200,8 @@
 			return;
 		}
 
-		// PERBAIKAN: Menggunakan toast() biasa, bukan toast.info()
 		toast('Mengirim notifikasi tes...');
 
-		// Panggil Edge Function 'send-notification'
 		const { error } = await supabase.functions.invoke('send-notification', {
 			body: {
 				user_id: userId,
@@ -276,14 +275,15 @@
 						<span class="text-gray-600 font-semibold hidden md:block"
 							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
+						<!-- <<< BARU: Komponen notifikasi internal ditambahkan di sini >>> -->
+						<NotificationBell />
 						<button
 							onclick={subscribeToNotifications}
-							title="Aktifkan Notifikasi"
+							title="Aktifkan Notifikasi Push"
 							class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
 						>
 							<BellRing class="w-5 h-5" />
 						</button>
-						<!-- PASTIKAN TOMBOL INI ADA -->
 						<button
 							onclick={sendTestNotification}
 							title="Kirim Notifikasi Tes"
@@ -308,14 +308,15 @@
 					<span class="text-gray-600 font-semibold hidden md:block"
 						>Welcome, {data.profile?.username || data.session.user.email}!</span
 					>
+					<!-- <<< BARU: Komponen notifikasi internal ditambahkan di sini >>> -->
+					<NotificationBell />
 					<button
 						onclick={subscribeToNotifications}
-						title="Aktifkan Notifikasi"
+						title="Aktifkan Notifikasi Push"
 						class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
 					>
 						<BellRing class="w-5 h-5" />
 					</button>
-					<!-- PASTIKAN TOMBOL INI ADA -->
 					<button
 						onclick={sendTestNotification}
 						title="Kirim Notifikasi Tes"
