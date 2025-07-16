@@ -193,43 +193,63 @@ export class KanbanLogic {
 	// BAGIAN YANG DIPERBAIKI: FUNGSI INI SEKARANG LEBIH AMAN
 	// =======================================================
 	async moveTask(taskId: string, newColumnId: string) {
-		const originalTasks = this.getCurrentState().tasks;
-		const taskToMove = originalTasks.find((t) => t.id === taskId);
-		if (!taskToMove) return;
+    const originalTasks = this.getCurrentState().tasks;
+    const taskToMove = originalTasks.find((t) => t.id === taskId);
+    if (!taskToMove) return;
 
-		// 1. Lakukan Optimistic Update. Ini menjaga data `assigned_to` yang sudah benar.
-		this.state.update((current) => ({
-			...current,
-			tasks: current.tasks.map((t) => (t.id === taskId ? { ...t, column_id: newColumnId } : t))
-		}));
+    // 1. Lakukan Optimistic Update. Ini menjaga data `assigned_to` yang sudah benar.
+    this.state.update((current) => ({
+        ...current,
+        tasks: current.tasks.map((t) => (t.id === taskId ? { ...t, column_id: newColumnId } : t))
+    }));
 
-		try {
-			const supabase = this.getSupabaseClient();
-			// 2. Kirim HANYA perubahan kolom ke database. Jangan re-fetch.
-			const { error } = await supabase
-				.from('tasks')
-				.update({ column_id: newColumnId })
-				.eq('id', taskId);
+    try {
+        const supabase = this.getSupabaseClient();
+        
+        // 2. Update column_id di database
+        const { error: updateError } = await supabase
+            .from('tasks')
+            .update({ column_id: newColumnId })
+            .eq('id', taskId);
 
-			if (error) throw error;
+        if (updateError) throw updateError;
 
-			// 3. Jika berhasil, tampilkan notifikasi. UI sudah benar.
-			if (browser) {
-				const newColumn = this.getCurrentState().columns.find((c) => c.id === newColumnId);
-				if (newColumn) {
-					const columnName = newColumn.name.toLowerCase();
-					if (columnName.includes('in progress'))
-						notificationService.taskMovedToInProgress(taskToMove.title);
-					else if (columnName.includes('done')) notificationService.taskCompleted(taskToMove.title);
-					else notificationService.taskMoved(taskToMove.title, newColumn.name);
-				}
-			}
-		} catch (error: any) {
-			if (browser) notificationService.showError('Gagal memindahkan tugas', error.message);
-			// 4. Jika gagal, kembalikan UI ke state semula.
-			this.state.update((current) => ({ ...current, tasks: originalTasks }));
-		}
-	}
+        // 3. Fetch task data lengkap dengan profile relationships
+        const { data: updatedTask, error: selectError } = await supabase
+            .from('tasks')
+            .select(
+                '*, assignee_profile:profiles!tasks_assigned_to_fkey(username), created_by_profile:profiles!tasks_created_by_fkey(username)'
+            )
+            .eq('id', taskId)
+            .single();
+
+        if (selectError) throw selectError;
+
+        // 4. Update state dengan data lengkap
+        this.state.update((current) => ({
+            ...current,
+            tasks: current.tasks.map((t) => (t.id === taskId ? updatedTask : t))
+        }));
+
+        // 5. Tampilkan notifikasi
+        if (browser) {
+            const newColumn = this.getCurrentState().columns.find((c) => c.id === newColumnId);
+            if (newColumn) {
+                const columnName = newColumn.name.toLowerCase();
+                if (columnName.includes('in progress'))
+                    notificationService.taskMovedToInProgress(taskToMove.title);
+                else if (columnName.includes('done')) 
+                    notificationService.taskCompleted(taskToMove.title);
+                else 
+                    notificationService.taskMoved(taskToMove.title, newColumn.name);
+            }
+        }
+    } catch (error: any) {
+        if (browser) notificationService.showError('Gagal memindahkan tugas', error.message);
+        // Jika gagal, kembalikan UI ke state semula
+        this.state.update((current) => ({ ...current, tasks: originalTasks }));
+    }
+}
 
 	async archiveCurrentProject() {
 		const projectToArchive = this.getCurrentState().project;
