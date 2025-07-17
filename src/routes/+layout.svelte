@@ -73,7 +73,7 @@
 	let isEditProfileModalOpen = $state(false);
 	let isAddProjectModalOpen = $state(false);
 	let isSidebarOpen = $state(false); // Untuk mobile
-	let isSidebarCollapsed = $state(false); // <<< BARU: State untuk melipat sidebar di desktop
+	let isSidebarCollapsed = $state(false); // Untuk desktop
 	let selectedProjectId: string | null = $state(null);
 
 	$effect(() => {
@@ -112,9 +112,7 @@
 	async function handleProfileUpdate(event: CustomEvent) {
 		const { newUsername, avatarFile } = event.detail;
 		if (!data.session?.user) return;
-
 		let avatarUrl = data.profile?.avatar_url;
-
 		if (avatarFile) {
 			const userId = data.session.user.id;
 			const fileExt = avatarFile.name.split('.').pop();
@@ -126,12 +124,10 @@
 			const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
 			avatarUrl = publicUrlData.publicUrl;
 		}
-
 		const { error } = await supabase
 			.from('profiles')
 			.update({ username: newUsername, avatar_url: avatarUrl })
 			.eq('id', data.session.user.id);
-
 		if (!error) {
 			isEditProfileModalOpen = false;
 			invalidateAll();
@@ -154,30 +150,25 @@
 			toast.error('Browser Anda tidak mendukung notifikasi.');
 			return;
 		}
-
 		const permission = await Notification.requestPermission();
 		if (permission !== 'granted') {
 			toast.warning('Anda tidak mengizinkan notifikasi.');
 			return;
 		}
-
 		const registration = await navigator.serviceWorker.ready;
 		const subscription = await registration.pushManager.subscribe({
 			userVisibleOnly: true,
 			applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_PUBLIC_KEY)
 		});
-
 		const userId = data.session?.user?.id;
 		if (!userId) {
 			toast.error('Sesi tidak ditemukan. Silakan login ulang.');
 			return;
 		}
-
 		const { error } = await supabase.from('push_subscriptions').insert({
 			user_id: userId,
 			subscription_object: subscription
 		});
-
 		if (error) {
 			if (error.code === '23505') {
 				toast.success('Notifikasi sudah aktif di perangkat ini.');
@@ -195,9 +186,7 @@
 			toast.error('Anda harus login untuk mengirim notifikasi.');
 			return;
 		}
-
 		toast('Mengirim notifikasi tes...');
-
 		const { error } = await supabase.functions.invoke('send-notification', {
 			body: {
 				user_id: userId,
@@ -208,7 +197,6 @@
 				}
 			}
 		});
-
 		if (error) {
 			toast.error(`Gagal mengirim notifikasi: ${error.message}`);
 		} else {
@@ -217,15 +205,13 @@
 	}
 </script>
 
-<!-- BAGIAN HTML LENGKAP -->
-<div class="flex h-screen bg-gray-100">
+<div class="relative min-h-screen bg-gray-100">
 	{#if data.session && $page.url.pathname !== '/login'}
 		<!-- Overlay untuk mobile -->
 		<div
 			class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
-			class:opacity-100={isSidebarOpen}
-			class:opacity-0={!isSidebarOpen}
-			class:pointer-events-none={!isSidebarOpen}
+			class:block={isSidebarOpen}
+			class:hidden={!isSidebarOpen}
 			onclick={() => (isSidebarOpen = false)}
 		></div>
 
@@ -256,12 +242,17 @@
 			on:close={() => (isSidebarOpen = false)}
 		/>
 
-		<!-- Konten Utama -->
-		<main class="flex-1 flex flex-col overflow-hidden">
-			<!-- Header -->
-			<header class="p-6 bg-white border-b border-gray-200">
+		<!-- Konten Utama - FIXED: Hanya di desktop yang ada padding, mobile tidak -->
+		<main
+			class="transition-all duration-300 ease-in-out min-h-screen"
+			class:md:pl-72={!isSidebarCollapsed}
+			class:md:pl-20={isSidebarCollapsed}
+		>
+			<div class="p-6 md:p-8">
 				{#if $page.url.pathname === '/'}
-					<div class="flex flex-col md:flex-row md:justify-between md:items-end">
+					<div
+						class="flex flex-col md:flex-row md:justify-between md:items-end mb-6 space-y-4 md:space-y-0"
+					>
 						<div>
 							<h1 class="text-4xl font-bold text-gray-800">Dashboard</h1>
 							<p class="text-gray-500 mt-1">{todayDate}</p>
@@ -272,7 +263,7 @@
 								Kamu punya {kanbanLogic.stats.inProgressCount} tugas yang belum selesai
 							</p>
 						</div>
-						<div class="flex gap-4 items-center mt-4 md:mt-0">
+						<div class="flex gap-4 items-center">
 							<span class="text-gray-600 font-semibold hidden md:block"
 								>Welcome, {data.profile?.username || data.session.user.email}!</span
 							>
@@ -304,7 +295,7 @@
 						</div>
 					</div>
 				{:else}
-					<div class="flex justify-end items-center gap-4">
+					<div class="flex justify-end items-center gap-4 mb-6">
 						<span class="text-gray-600 font-semibold hidden md:block"
 							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
@@ -335,10 +326,6 @@
 						>
 					</div>
 				{/if}
-			</header>
-
-			<!-- Area Konten yang bisa di-scroll -->
-			<div class="flex-1 p-8 overflow-y-auto">
 				<Toaster class="center-toaster w-64 text-wrap" position="center" />
 				<slot />
 			</div>

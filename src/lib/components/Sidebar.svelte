@@ -26,8 +26,36 @@
 	const dispatch = createEventDispatcher();
 	let isTasksDropdownOpen = $state(false);
 
+	// --- AWAL PERBAIKAN ---
+
+	// 1. Buat state untuk menampung lebar window
+	let windowWidth = $state(0);
+
+	// 2. Gunakan $effect untuk memantau perubahan ukuran window di sisi client
+	$effect(() => {
+		const handleResize = () => {
+			windowWidth = window.innerWidth;
+		};
+
+		// Set nilai awal & tambahkan event listener
+		handleResize();
+		window.addEventListener('resize', handleResize);
+
+		// Cleanup function untuk hapus listener saat komponen hancur
+		return () => {
+			window.removeEventListener('resize', handleResize);
+		};
+	});
+
+	// 3. Ganti `$` dengan `$derived` untuk variabel turunan
+	let isCollapsedDesktop = $derived(isSidebarCollapsed && windowWidth >= 768);
+	let showText = $derived(isSidebarOpen || !isCollapsedDesktop);
+
+	// --- AKHIR PERBAIKAN ---
+
 	function closeSidebarOnMobile() {
-		if (window.innerWidth < 768) {
+		// Pengecekan `windowWidth` lebih aman daripada `window.innerWidth` langsung
+		if (windowWidth < 768) {
 			dispatch('close');
 		}
 	}
@@ -48,20 +76,13 @@
 </script>
 
 <aside
-	class="relative flex flex-col bg-gray-900 text-white p-4 shadow-2xl transition-all duration-300 ease-in-out
-           md:h-screen"
-	class:fixed={isSidebarOpen}
-	class:inset-y-0={isSidebarOpen}
-	class:left-0={isSidebarOpen}
-	class:z-50={isSidebarOpen}
-	class:w-72={isSidebarOpen || !isSidebarCollapsed}
+	class="fixed inset-y-0 left-0 z-50 flex flex-col bg-gray-900 text-white shadow-2xl transition-all duration-300 ease-in-out h-screen -translate-x-full md:translate-x-0 p-4"
 	class:translate-x-0={isSidebarOpen}
-	class:-translate-x-full={!isSidebarOpen}
-	class:md:translate-x-0={true}
+	class:md:w-72={!isSidebarCollapsed}
 	class:md:w-20={isSidebarCollapsed}
+	class:w-72={isSidebarOpen}
 	class:md:p-2={isSidebarCollapsed}
 >
-	<!-- Tombol Lipat/Buka untuk Desktop -->
 	<button
 		onclick={() => (isSidebarCollapsed = !isSidebarCollapsed)}
 		class="absolute -right-3 top-8 z-10 hidden md:flex items-center justify-center w-6 h-6 bg-purple-600 text-white rounded-full hover:bg-purple-700 focus:outline-none"
@@ -70,14 +91,12 @@
 		<ChevronsLeft class="w-4 h-4 transition-transform {isSidebarCollapsed ? 'rotate-180' : ''}" />
 	</button>
 
-	<!-- <<< PERUBAHAN: Header Profil diubah sesuai gaya Netlify -->
 	<div class="mb-8 mt-4">
 		<button
 			onclick={() => navigateTo('/profile')}
 			class="flex items-center w-full p-2 rounded-lg hover:bg-gray-800 transition-colors"
-			class:justify-center={isSidebarCollapsed}
+			class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 		>
-			<!-- Avatar (ukuran tetap) -->
 			{#if userAvatar}
 				<img
 					src={userAvatar}
@@ -92,8 +111,7 @@
 				</div>
 			{/if}
 
-			<!-- Info User (nama & email) - Muncul saat tidak terlipat -->
-			{#if !isSidebarCollapsed}
+			{#if showText}
 				<div class="ml-3 text-left overflow-hidden">
 					<p class="text-sm font-semibold text-gray-100 leading-tight truncate">
 						{userName || 'Guest'}
@@ -106,7 +124,6 @@
 		</button>
 	</div>
 
-	<!-- Navigasi -->
 	<nav class="flex-1 space-y-2">
 		<button
 			onclick={() => navigateTo('/profile')}
@@ -114,11 +131,11 @@
 				.pathname === '/profile'
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
-			class:md:justify-center={isSidebarCollapsed}
+			class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 			title="Profil"
 		>
-			<User class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-3'}" />
-			{#if !isSidebarCollapsed}<span>Profil</span>{/if}
+			<User class="w-5 h-5 flex-shrink-0 {showText ? 'mr-3' : ''}" />
+			{#if showText}<span>Profil</span>{/if}
 		</button>
 
 		<button
@@ -128,14 +145,13 @@
 			)
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
-			class:md:justify-center={isSidebarCollapsed}
+			class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 			title="Proyek"
 		>
-			<LayoutDashboard class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-3'}" />
-			{#if !isSidebarCollapsed}<span>Proyek</span>{/if}
+			<LayoutDashboard class="w-5 h-5 flex-shrink-0 {showText ? 'mr-3' : ''}" />
+			{#if showText}<span>Proyek</span>{/if}
 		</button>
 
-		<!-- Dropdown Tugas -->
 		<div class="space-y-1">
 			<button
 				onclick={toggleTasksDropdown}
@@ -144,27 +160,25 @@
 			>
 				<span
 					class="flex items-center"
-					class:md:justify-center={isSidebarCollapsed}
-					class:w-full={isSidebarCollapsed}
+					class:w-full={isSidebarCollapsed && !isSidebarOpen}
+					class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 				>
-					<ListTodo class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-3'}" />
-					{#if !isSidebarCollapsed}<span>Tugas</span>{/if}
+					<ListTodo class="w-5 h-5 flex-shrink-0 {showText ? 'mr-3' : ''}" />
+					{#if showText}<span>Tugas</span>{/if}
 				</span>
-				{#if !isSidebarCollapsed}
+				{#if showText}
 					<svg
 						class="w-4 h-4 transform transition-transform"
 						class:rotate-90={isTasksDropdownOpen}
 						fill="none"
 						stroke="currentColor"
 						viewBox="0 0 24 24"
-					>
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"
+						><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"
 						></path>
 					</svg>
 				{/if}
 			</button>
-
-			{#if isTasksDropdownOpen && !isSidebarCollapsed}
+			{#if isTasksDropdownOpen && showText}
 				<div class="ml-6 space-y-1">
 					<button
 						onclick={() => navigateTo('/tasks/to-do')}
@@ -194,11 +208,11 @@
 					.pathname === '/team'
 					? 'bg-purple-600 text-white shadow-lg'
 					: 'text-gray-300 hover:bg-gray-800'}"
-				class:md:justify-center={isSidebarCollapsed}
+				class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 				title="Tim"
 			>
-				<Users class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-3'}" />
-				{#if !isSidebarCollapsed}<span>Tim</span>{/if}
+				<Users class="w-5 h-5 flex-shrink-0 {showText ? 'mr-3' : ''}" />
+				{#if showText}<span>Tim</span>{/if}
 			</button>
 		{/if}
 
@@ -208,11 +222,11 @@
 				.pathname === '/tools/pomodoro'
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
-			class:md:justify-center={isSidebarCollapsed}
+			class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 			title="Pomodoro"
 		>
-			<Clock class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-3'}" />
-			{#if !isSidebarCollapsed}<span>Pomodoro</span>{/if}
+			<Clock class="w-5 h-5 flex-shrink-0 {showText ? 'mr-3' : ''}" />
+			{#if showText}<span>Pomodoro</span>{/if}
 		</button>
 
 		<button
@@ -221,23 +235,22 @@
 				.pathname === '/leaderboard'
 				? 'bg-purple-600 text-white shadow-lg'
 				: 'text-gray-300 hover:bg-gray-800'}"
-			class:md:justify-center={isSidebarCollapsed}
+			class:justify-center={isSidebarCollapsed && !isSidebarOpen}
 			title="Leaderboard"
 		>
-			<Trophy class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-3'}" />
-			{#if !isSidebarCollapsed}<span>Leaderboard</span>{/if}
+			<Trophy class="w-5 h-5 flex-shrink-0 {showText ? 'mr-3' : ''}" />
+			{#if showText}<span>Leaderboard</span>{/if}
 		</button>
 	</nav>
 
-	<!-- Tombol Proyek Baru -->
 	<div class="mt-auto">
 		<button
 			onclick={openAddProjectModal}
 			class="w-full flex items-center justify-center p-3 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 transition-all"
 			title="Proyek Baru"
 		>
-			<Plus class="w-5 h-5 flex-shrink-0 {isSidebarCollapsed ? 'md:mr-0' : 'mr-2'}" />
-			{#if !isSidebarCollapsed}
+			<Plus class="w-5 h-5 flex-shrink-0 {showText ? 'mr-2' : ''}" />
+			{#if showText}
 				<span>Proyek Baru</span>
 			{/if}
 		</button>
