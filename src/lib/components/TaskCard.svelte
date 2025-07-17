@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	// <<< BARU: Impor ikon-ikon yang kita butuhkan untuk menu
 	import { ChevronDown, MoreHorizontal, Play, CheckCircle2, Pencil, Trash2 } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 
@@ -13,6 +14,7 @@
 	let isExpanded = $state(false);
 	let isMenuOpen = $state(false);
 
+	// --- LOGIKA PEWARNAAN (Tidak Berubah) ---
 	const assignee = $derived(task.profiles || task.assignee_profile);
 	const colorPalette = [
 		'border-blue-500',
@@ -37,6 +39,7 @@
 		return colorPalette[index];
 	}
 	const cardColorClass = $derived(getColorFromString(assignee?.username));
+	// -----------------------------------------
 
 	function handleMove(destinationColumnName: string) {
 		dispatch('move', {
@@ -57,7 +60,7 @@
 	}
 </script>
 
-<!-- PERBAIKAN: Tambahkan 'relative' dan z-index dinamis -->
+<!-- Terapkan warna HANYA pada border kiri -->
 <div
 	class="bg-white p-4 rounded-lg shadow-md border-l-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 {cardColorClass} relative"
 	class:z-10={isMenuOpen}
@@ -69,9 +72,25 @@
 	<div class="flex justify-between items-start gap-2">
 		<div class="flex-1">
 			<h4 class="font-bold text-gray-800 leading-tight">{task.title}</h4>
-			<p class="text-xs text-gray-500 mt-1">
-				@{assignee?.username || 'Belum ditugaskan'}
-			</p>
+			<!-- <<< PERBAIKAN: Menambahkan Avatar di sebelah nama >>> -->
+			<div class="flex items-center gap-2 mt-2">
+				{#if assignee?.avatar_url}
+					<img
+						src={assignee.avatar_url}
+						alt={assignee.username}
+						class="w-5 h-5 rounded-full object-cover"
+					/>
+				{:else}
+					<div
+						class="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600"
+					>
+						{assignee?.username?.charAt(0).toUpperCase() || '?'}
+					</div>
+				{/if}
+				<p class="text-xs text-gray-500">
+					{assignee?.username || 'Belum ditugaskan'}
+				</p>
+			</div>
 		</div>
 
 		<div class="flex items-center flex-shrink-0 relative">

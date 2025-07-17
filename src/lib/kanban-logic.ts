@@ -10,6 +10,7 @@ import { RealtimeManager, type RealtimeCallbacks } from '$lib/realtime-service';
 export interface ProfileData {
 	id: string;
 	username: string;
+	avatar_url?: string;
 }
 
 export interface KanbanState {
@@ -110,6 +111,20 @@ export class KanbanLogic {
 		});
 	}
 
+	// <<< BARU: Getter untuk mengelompokkan tugas berdasarkan pengguna >>>
+	get groupedTasks() {
+		return derived(this.filteredTasks, ($filteredTasks) => {
+			return $filteredTasks.reduce((acc, task) => {
+				const assigneeName = task.profiles?.username || 'Belum Ditugaskan';
+				if (!acc[assigneeName]) {
+					acc[assigneeName] = [];
+				}
+				acc[assigneeName].push(task);
+				return acc;
+			}, {} as Record<string, any[]>);
+		});
+	}
+
 	private updateState(updates: Partial<KanbanState>) {
 		this.state.update((current) => ({ ...current, ...updates }));
 	}
@@ -121,10 +136,20 @@ export class KanbanLogic {
 			const supabase = this.getSupabaseClient();
 			const { data, error } = await supabase.rpc('load_kanban_project', { project_id: projectId });
 			if (error) throw error;
+
+			const members = data.members || [];
+			const tasksWithProfiles = (data.tasks || []).map((task: any) => {
+				const assigneeProfile = members.find((member: any) => member.id === task.assigned_to);
+				return {
+					...task,
+					profiles: assigneeProfile || null
+				};
+			});
+
 			this.updateState({
 				project: data.project,
 				columns: data.columns,
-				tasks: data.tasks,
+				tasks: tasksWithProfiles,
 				profiles: data.members,
 				projectLead: data.project_lead,
 				teamMembers: data.members
@@ -138,6 +163,7 @@ export class KanbanLogic {
 		}
 	}
 
+	// ... (Sisa dari kode Anda tidak perlu diubah)
 	async createTask(taskData: any) {
 		const supabase = this.getSupabaseClient();
 		const currentState = this.getCurrentState();
@@ -189,67 +215,57 @@ export class KanbanLogic {
 		if (browser) notificationService.taskDeleted(taskTitle);
 	}
 
-	// =======================================================
-	// BAGIAN YANG DIPERBAIKI: FUNGSI INI SEKARANG LEBIH AMAN
-	// =======================================================
 	async moveTask(taskId: string, newColumnId: string) {
-    const originalTasks = this.getCurrentState().tasks;
-    const taskToMove = originalTasks.find((t) => t.id === taskId);
-    if (!taskToMove) return;
+		const originalTasks = this.getCurrentState().tasks;
+		const taskToMove = originalTasks.find((t) => t.id === taskId);
+		if (!taskToMove) return;
 
-    // 1. Lakukan Optimistic Update. Ini menjaga data `assigned_to` yang sudah benar.
-    this.state.update((current) => ({
-        ...current,
-        tasks: current.tasks.map((t) => (t.id === taskId ? { ...t, column_id: newColumnId } : t))
-    }));
+		this.state.update((current) => ({
+			...current,
+			tasks: current.tasks.map((t) => (t.id === taskId ? { ...t, column_id: newColumnId } : t))
+		}));
 
-    try {
-        const supabase = this.getSupabaseClient();
-        
-        // 2. Update column_id di database
-        const { error: updateError } = await supabase
-            .from('tasks')
-            .update({ column_id: newColumnId })
-            .eq('id', taskId);
+		try {
+			const supabase = this.getSupabaseClient();
 
-        if (updateError) throw updateError;
+			const { error: updateError } = await supabase
+				.from('tasks')
+				.update({ column_id: newColumnId })
+				.eq('id', taskId);
 
-        // 3. Fetch task data lengkap dengan profile relationships
-        const { data: updatedTask, error: selectError } = await supabase
-            .from('tasks')
-            .select(
-                '*, assignee_profile:profiles!tasks_assigned_to_fkey(username), created_by_profile:profiles!tasks_created_by_fkey(username)'
-            )
-            .eq('id', taskId)
-            .single();
+			if (updateError) throw updateError;
 
-        if (selectError) throw selectError;
+			const { data: updatedTask, error: selectError } = await supabase
+				.from('tasks')
+				.select(
+					'*, assignee_profile:profiles!tasks_assigned_to_fkey(username), created_by_profile:profiles!tasks_created_by_fkey(username)'
+				)
+				.eq('id', taskId)
+				.single();
 
-        // 4. Update state dengan data lengkap
-        this.state.update((current) => ({
-            ...current,
-            tasks: current.tasks.map((t) => (t.id === taskId ? updatedTask : t))
-        }));
+			if (selectError) throw selectError;
 
-        // 5. Tampilkan notifikasi
-        if (browser) {
-            const newColumn = this.getCurrentState().columns.find((c) => c.id === newColumnId);
-            if (newColumn) {
-                const columnName = newColumn.name.toLowerCase();
-                if (columnName.includes('in progress'))
-                    notificationService.taskMovedToInProgress(taskToMove.title);
-                else if (columnName.includes('done')) 
-                    notificationService.taskCompleted(taskToMove.title);
-                else 
-                    notificationService.taskMoved(taskToMove.title, newColumn.name);
-            }
-        }
-    } catch (error: any) {
-        if (browser) notificationService.showError('Gagal memindahkan tugas', error.message);
-        // Jika gagal, kembalikan UI ke state semula
-        this.state.update((current) => ({ ...current, tasks: originalTasks }));
-    }
-}
+			this.state.update((current) => ({
+				...current,
+				tasks: current.tasks.map((t) => (t.id === taskId ? updatedTask : t))
+			}));
+
+			if (browser) {
+				const newColumn = this.getCurrentState().columns.find((c) => c.id === newColumnId);
+				if (newColumn) {
+					const columnName = newColumn.name.toLowerCase();
+					if (columnName.includes('in progress'))
+						notificationService.taskMovedToInProgress(taskToMove.title);
+					else if (columnName.includes('done'))
+						notificationService.taskCompleted(taskToMove.title);
+					else notificationService.taskMoved(taskToMove.title, newColumn.name);
+				}
+			}
+		} catch (error: any) {
+			if (browser) notificationService.showError('Gagal memindahkan tugas', error.message);
+			this.state.update((current) => ({ ...current, tasks: originalTasks }));
+		}
+	}
 
 	async archiveCurrentProject() {
 		const projectToArchive = this.getCurrentState().project;
@@ -266,7 +282,6 @@ export class KanbanLogic {
 		return true;
 	}
 
-	// Fungsi-fungsi lain (tidak berubah)
 	private resetProject() {
 		this.cleanupRealtimeListeners();
 		this.updateState({

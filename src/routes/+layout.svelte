@@ -18,7 +18,6 @@
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import { Toaster, toast } from '$lib/toast';
 	import { BellRing, Send } from '@lucide/svelte';
-	// <<< BARU: Impor komponen notifikasi internal
 	import NotificationBell from '$lib/components/NotificationBell.svelte';
 
 	// 2. TERIMA DATA DARI SERVER
@@ -49,7 +48,6 @@
 
 	// 5. LISTENER AUTH & SERVICE WORKER
 	onMount(() => {
-		// Pendaftaran Service Worker
 		if ('serviceWorker' in navigator) {
 			navigator.serviceWorker
 				.register('/service-worker.js', { type: 'module' })
@@ -61,7 +59,6 @@
 				});
 		}
 
-		// Listener Auth State
 		const {
 			data: { subscription }
 		} = supabase.auth.onAuthStateChange((event, newSession) => {
@@ -75,7 +72,8 @@
 	// 6. STATE LOKAL & EFFECTS
 	let isEditProfileModalOpen = $state(false);
 	let isAddProjectModalOpen = $state(false);
-	let isSidebarOpen = $state(false);
+	let isSidebarOpen = $state(false); // Untuk mobile
+	let isSidebarCollapsed = $state(false); // <<< BARU: State untuk melipat sidebar di desktop
 	let selectedProjectId: string | null = $state(null);
 
 	$effect(() => {
@@ -140,7 +138,6 @@
 		}
 	}
 
-	// Fungsi untuk mengaktifkan notifikasi
 	function urlBase64ToUint8Array(base64String: string) {
 		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
 		const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -192,7 +189,6 @@
 		}
 	}
 
-	// Fungsi untuk mengirim notifikasi tes
 	async function sendTestNotification() {
 		const userId = data.session?.user?.id;
 		if (!userId) {
@@ -222,8 +218,9 @@
 </script>
 
 <!-- BAGIAN HTML LENGKAP -->
-<div class="flex h-screen overflow-hidden">
+<div class="flex h-screen bg-gray-100">
 	{#if data.session && $page.url.pathname !== '/login'}
+		<!-- Overlay untuk mobile -->
 		<div
 			class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
 			class:opacity-100={isSidebarOpen}
@@ -232,6 +229,7 @@
 			onclick={() => (isSidebarOpen = false)}
 		></div>
 
+		<!-- Tombol hamburger untuk mobile -->
 		<button
 			class="fixed top-4 left-4 z-50 p-2 rounded-md bg-gray-800 text-white md:hidden"
 			onclick={() => (isSidebarOpen = !isSidebarOpen)}
@@ -246,36 +244,70 @@
 			>
 		</button>
 
+		<!-- Sidebar -->
 		<Sidebar
 			session={data.session}
 			userName={data.profile?.username || data.session.user.email}
 			userAvatar={data.profile?.avatar_url || null}
 			userRole={data.profile?.role}
 			bind:isSidebarOpen
+			bind:isSidebarCollapsed
 			on:openAddProjectModal={() => (isAddProjectModalOpen = true)}
 			on:close={() => (isSidebarOpen = false)}
 		/>
 
-		<main class="flex-1 p-8 overflow-y-auto bg-gray-100">
-			{#if $page.url.pathname === '/'}
-				<div
-					class="flex flex-col md:flex-row md:justify-between md:items-end mb-6 space-y-4 md:space-y-0"
-				>
-					<div>
-						<h1 class="text-4xl font-bold text-gray-800">Dashboard</h1>
-						<p class="text-gray-500 mt-1">{todayDate}</p>
-						<p class="text-gray-600 font-semibold mt-2">
-							Kamu punya {kanbanLogic.stats.todoCount} rencana hari ini
-						</p>
-						<p class="text-gray-600 font-semibold">
-							Kamu punya {kanbanLogic.stats.inProgressCount} tugas yang belum selesai
-						</p>
+		<!-- Konten Utama -->
+		<main class="flex-1 flex flex-col overflow-hidden">
+			<!-- Header -->
+			<header class="p-6 bg-white border-b border-gray-200">
+				{#if $page.url.pathname === '/'}
+					<div class="flex flex-col md:flex-row md:justify-between md:items-end">
+						<div>
+							<h1 class="text-4xl font-bold text-gray-800">Dashboard</h1>
+							<p class="text-gray-500 mt-1">{todayDate}</p>
+							<p class="text-gray-600 font-semibold mt-2">
+								Kamu punya {kanbanLogic.stats.todoCount} rencana hari ini
+							</p>
+							<p class="text-gray-600 font-semibold">
+								Kamu punya {kanbanLogic.stats.inProgressCount} tugas yang belum selesai
+							</p>
+						</div>
+						<div class="flex gap-4 items-center mt-4 md:mt-0">
+							<span class="text-gray-600 font-semibold hidden md:block"
+								>Welcome, {data.profile?.username || data.session.user.email}!</span
+							>
+							<NotificationBell />
+							<button
+								onclick={subscribeToNotifications}
+								title="Aktifkan Notifikasi Push"
+								class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
+							>
+								<BellRing class="w-5 h-5" />
+							</button>
+							<button
+								onclick={sendTestNotification}
+								title="Kirim Notifikasi Tes"
+								class="p-2 rounded-xl shadow-lg bg-blue-500 text-white hover:bg-blue-600"
+							>
+								<Send class="w-5 h-5" />
+							</button>
+							<button
+								onclick={() => (isEditProfileModalOpen = true)}
+								class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
+								>Edit Profil</button
+							>
+							<button
+								onclick={handleLogout}
+								class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
+								>Logout</button
+							>
+						</div>
 					</div>
-					<div class="flex gap-4 items-center">
+				{:else}
+					<div class="flex justify-end items-center gap-4">
 						<span class="text-gray-600 font-semibold hidden md:block"
 							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
-						<!-- <<< BARU: Komponen notifikasi internal ditambahkan di sini >>> -->
 						<NotificationBell />
 						<button
 							onclick={subscribeToNotifications}
@@ -302,42 +334,14 @@
 							>Logout</button
 						>
 					</div>
-				</div>
-			{:else}
-				<div class="flex justify-end items-center gap-4 mb-6">
-					<span class="text-gray-600 font-semibold hidden md:block"
-						>Welcome, {data.profile?.username || data.session.user.email}!</span
-					>
-					<!-- <<< BARU: Komponen notifikasi internal ditambahkan di sini >>> -->
-					<NotificationBell />
-					<button
-						onclick={subscribeToNotifications}
-						title="Aktifkan Notifikasi Push"
-						class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
-					>
-						<BellRing class="w-5 h-5" />
-					</button>
-					<button
-						onclick={sendTestNotification}
-						title="Kirim Notifikasi Tes"
-						class="p-2 rounded-xl shadow-lg bg-blue-500 text-white hover:bg-blue-600"
-					>
-						<Send class="w-5 h-5" />
-					</button>
-					<button
-						onclick={() => (isEditProfileModalOpen = true)}
-						class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
-						>Edit Profil</button
-					>
-					<button
-						onclick={handleLogout}
-						class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
-						>Logout</button
-					>
-				</div>
-			{/if}
-			<Toaster class="center-toaster w-64 text-wrap" position="center" />
-			<slot />
+				{/if}
+			</header>
+
+			<!-- Area Konten yang bisa di-scroll -->
+			<div class="flex-1 p-8 overflow-y-auto">
+				<Toaster class="center-toaster w-64 text-wrap" position="center" />
+				<slot />
+			</div>
 		</main>
 
 		<!-- Modals -->
