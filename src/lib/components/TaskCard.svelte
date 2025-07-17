@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { ChevronDown } from '@lucide/svelte';
+	import { ChevronDown, MoreHorizontal, Play, CheckCircle2, Pencil, Trash2 } from '@lucide/svelte';
+	import { fly } from 'svelte/transition';
 
-	// Komponen ini menerima satu tugas dan nama kolomnya
 	let { task, columnName, isDesktop } = $props<{
 		task: any;
 		columnName: string;
@@ -10,49 +10,143 @@
 	}>();
 
 	const dispatch = createEventDispatcher();
-
-	// State lokal untuk mengontrol accordion
 	let isExpanded = $state(false);
+	let isMenuOpen = $state(false);
 
-	// Fungsi untuk memindahkan tugas (tidak berubah)
+	const assignee = $derived(task.profiles || task.assignee_profile);
+	const colorPalette = [
+		'border-blue-500',
+		'border-green-500',
+		'border-yellow-500',
+		'border-pink-500',
+		'border-indigo-500',
+		'border-teal-500',
+		'border-red-500',
+		'border-orange-500',
+		'border-purple-500',
+		'border-cyan-500',
+		'border-lime-500',
+		'border-fuchsia-500'
+	];
+	function getColorFromString(inputString: string | null): string {
+		if (!inputString) {
+			return 'border-gray-400';
+		}
+		const charCodeSum = inputString.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+		const index = charCodeSum % colorPalette.length;
+		return colorPalette[index];
+	}
+	const cardColorClass = $derived(getColorFromString(assignee?.username));
+
 	function handleMove(destinationColumnName: string) {
 		dispatch('move', {
 			taskId: task.id,
 			destinationColumnName: destinationColumnName
 		});
+		isMenuOpen = false;
+	}
+
+	function handleEdit() {
+		dispatch('edit', task);
+		isMenuOpen = false;
+	}
+
+	function handleDelete() {
+		dispatch('delete', task);
+		isMenuOpen = false;
 	}
 </script>
 
+<!-- PERBAIKAN: Tambahkan 'relative' dan z-index dinamis -->
 <div
-	class="bg-white p-4 rounded-lg shadow-md border-t-4 border-purple-500 transition-shadow hover:shadow-lg"
+	class="bg-white p-4 rounded-lg shadow-md border-l-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 {cardColorClass} relative"
+	class:z-10={isMenuOpen}
 	class:cursor-grab={isDesktop}
 	class:active:cursor-grabbing={isDesktop}
 	role="button"
 	tabindex="0"
 >
-	<!-- Bagian Atas: Judul, Pemilik & Tombol Accordion -->
 	<div class="flex justify-between items-start gap-2">
 		<div class="flex-1">
 			<h4 class="font-bold text-gray-800 leading-tight">{task.title}</h4>
 			<p class="text-xs text-gray-500 mt-1">
-				Untuk: {task.assignee_profile?.username || 'Belum ditugaskan'}
+				@{assignee?.username || 'Belum ditugaskan'}
 			</p>
 		</div>
-		<button
-			on:click|stopPropagation={() => (isExpanded = !isExpanded)}
-			class="p-1 flex-shrink-0 text-gray-500 hover:bg-gray-200 rounded-full"
-			aria-label="Tampilkan detail"
-		>
-			<!-- ======================================================= -->
-			<!-- BAGIAN YANG DIPERBAIKI: IKON DIBUNGKUS SPAN -->
-			<!-- ======================================================= -->
-			<span class="transition-transform duration-200 block" class:rotate-180={isExpanded}>
-				<ChevronDown size={20} />
-			</span>
-		</button>
+
+		<div class="flex items-center flex-shrink-0 relative">
+			<!-- Tombol Tiga Titik -->
+			<button
+				onclick={(e) => {
+					e.stopPropagation();
+					isMenuOpen = !isMenuOpen;
+				}}
+				class="p-2 rounded-full text-gray-500 hover:bg-gray-200"
+				title="Aksi Lainnya"
+			>
+				<MoreHorizontal size={16} />
+			</button>
+
+			<!-- Menu Dropdown Aksi -->
+			{#if isMenuOpen}
+				<div
+					class="absolute top-full right-0 mt-1 w-48 bg-white rounded-md shadow-lg border z-10"
+					transition:fly={{ y: -5, duration: 150 }}
+				>
+					<div class="py-1">
+						{#if columnName.toLowerCase() === 'to do'}
+							<button
+								onclick={() => handleMove('In Progress')}
+								class="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+							>
+								<Play class="w-4 h-4 mr-3 text-blue-600" />
+								<span>Kerjakan</span>
+							</button>
+						{:else if columnName.toLowerCase() === 'in progress'}
+							<button
+								onclick={() => handleMove('Done')}
+								class="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+							>
+								<CheckCircle2 class="w-4 h-4 mr-3 text-green-600" />
+								<span>Tandai Selesai</span>
+							</button>
+						{/if}
+						<button
+							onclick={handleEdit}
+							class="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+						>
+							<Pencil class="w-4 h-4 mr-3 text-yellow-600" />
+							<span>Edit Tugas</span>
+						</button>
+						<div class="border-t my-1"></div>
+						<button
+							onclick={handleDelete}
+							class="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+						>
+							<Trash2 class="w-4 h-4 mr-3" />
+							<span>Hapus Tugas</span>
+						</button>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Tombol Accordion -->
+			<button
+				onclick={(e) => {
+					e.stopPropagation();
+					isExpanded = !isExpanded;
+				}}
+				class="p-1 text-gray-500 hover:bg-gray-200 rounded-full ml-1"
+				aria-label="Tampilkan detail"
+			>
+				<span class="transition-transform duration-200 block" class:rotate-180={isExpanded}>
+					<ChevronDown size={20} />
+				</span>
+			</button>
+		</div>
 	</div>
 
-	<!-- Bagian Accordion: Detail yang tersembunyi -->
+	<!-- Bagian Accordion -->
 	{#if isExpanded}
 		<div class="mt-3 pt-3 border-t border-gray-200 space-y-2 text-sm">
 			{#if task.description}
@@ -67,36 +161,4 @@
 			</div>
 		</div>
 	{/if}
-
-	<!-- Tombol Aksi Utama (selalu terlihat) -->
-	<div class="flex flex-wrap gap-2 mt-4">
-		{#if columnName.toLowerCase() === 'to do'}
-			<button
-				on:click|stopPropagation={() => handleMove('In Progress')}
-				class="bg-blue-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-blue-600"
-			>
-				Kerjakan
-			</button>
-		{:else if columnName.toLowerCase() === 'in progress'}
-			<button
-				on:click|stopPropagation={() => handleMove('Done')}
-				class="bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-green-600"
-			>
-				Selesai
-			</button>
-		{/if}
-
-		<button
-			on:click|stopPropagation={() => dispatch('edit', task)}
-			class="bg-yellow-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-yellow-600"
-		>
-			Edit
-		</button>
-		<button
-			on:click|stopPropagation={() => dispatch('delete', task)}
-			class="bg-red-500 text-white text-xs font-semibold px-3 py-1 rounded hover:bg-red-600"
-		>
-			Hapus
-		</button>
-	</div>
 </div>
