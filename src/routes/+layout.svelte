@@ -14,16 +14,16 @@
 	import { page } from '$app/stores';
 	import { kanbanLogic } from '$lib/kanban-logic';
 	import Sidebar from '$lib/components/Sidebar.svelte';
-	import EditProfileModal from '$lib/components/EditProfileModal.svelte';
 	import AddProjectModal from '$lib/components/AddProjectModal.svelte';
 	import { Toaster, toast } from '$lib/toast';
-	import { BellRing, Send } from '@lucide/svelte';
+	// --- PERUBAHAN: Tambahkan ikon LogOut ---
+	import { BellRing, Send, LogOut } from '@lucide/svelte';
 	import NotificationBell from '$lib/components/NotificationBell.svelte';
 
 	// 2. TERIMA DATA DARI SERVER
 	let { data } = $props<LayoutData>();
 
-	// 3. BUAT SUPABASE CLIENT
+	// 3. BUAT SUPABASE CLIENT (Tidak ada perubahan)
 	const supabase = createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
 		global: { fetch },
 		cookies: {
@@ -43,10 +43,10 @@
 		}
 	});
 
-	// 4. ISI STORE
+	// 4. ISI STORE (Tidak ada perubahan)
 	supabaseClientStore.set(supabase);
 
-	// 5. LISTENER AUTH & SERVICE WORKER
+	// 5. LISTENER AUTH & SERVICE WORKER (Tidak ada perubahan)
 	onMount(() => {
 		if ('serviceWorker' in navigator) {
 			navigator.serviceWorker
@@ -70,7 +70,7 @@
 	});
 
 	// 6. STATE LOKAL & EFFECTS
-	let isEditProfileModalOpen = $state(false);
+	// --- PERUBAHAN: State untuk Edit Profile Modal dihapus ---
 	let isAddProjectModalOpen = $state(false);
 	let isSidebarOpen = $state(false); // Untuk mobile
 	let isSidebarCollapsed = $state(false); // Untuk desktop
@@ -109,30 +109,8 @@
 		invalidateAll();
 	}
 
-	async function handleProfileUpdate(event: CustomEvent) {
-		const { newUsername, avatarFile } = event.detail;
-		if (!data.session?.user) return;
-		let avatarUrl = data.profile?.avatar_url;
-		if (avatarFile) {
-			const userId = data.session.user.id;
-			const fileExt = avatarFile.name.split('.').pop();
-			const filePath = `${userId}/${Date.now()}.${fileExt}`;
-			const { error: uploadError } = await supabase.storage
-				.from('avatars')
-				.upload(filePath, avatarFile);
-			if (uploadError) return console.error('Upload avatar error:', uploadError);
-			const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-			avatarUrl = publicUrlData.publicUrl;
-		}
-		const { error } = await supabase
-			.from('profiles')
-			.update({ username: newUsername, avatar_url: avatarUrl })
-			.eq('id', data.session.user.id);
-		if (!error) {
-			isEditProfileModalOpen = false;
-			invalidateAll();
-		}
-	}
+	// --- PERUBAHAN: Fungsi handleProfileUpdate dihapus ---
+	// Fungsi ini akan kita pindahkan ke halaman profil
 
 	function urlBase64ToUint8Array(base64String: string) {
 		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -207,7 +185,6 @@
 
 <div class="relative min-h-screen bg-gray-100">
 	{#if data.session && $page.url.pathname !== '/login'}
-		<!-- Overlay untuk mobile -->
 		<div
 			class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
 			class:block={isSidebarOpen}
@@ -215,7 +192,6 @@
 			onclick={() => (isSidebarOpen = false)}
 		></div>
 
-		<!-- Tombol hamburger untuk mobile -->
 		<button
 			class="fixed top-4 left-4 z-50 p-2 rounded-md bg-gray-800 text-white md:hidden"
 			onclick={() => (isSidebarOpen = !isSidebarOpen)}
@@ -230,7 +206,6 @@
 			>
 		</button>
 
-		<!-- Sidebar -->
 		<Sidebar
 			session={data.session}
 			userName={data.profile?.username || data.session.user.email}
@@ -242,18 +217,17 @@
 			on:close={() => (isSidebarOpen = false)}
 		/>
 
-		<!-- Konten Utama - FIXED: Hanya di desktop yang ada padding, mobile tidak -->
 		<main
 			class="transition-all duration-300 ease-in-out min-h-screen"
 			class:md:pl-72={!isSidebarCollapsed}
 			class:md:pl-20={isSidebarCollapsed}
 		>
 			<div class="p-6 md:p-8">
-				{#if $page.url.pathname === '/'}
-					<div
-						class="flex flex-col md:flex-row md:justify-between md:items-end mb-6 space-y-4 md:space-y-0"
-					>
-						<div>
+				<header
+					class="flex flex-col md:flex-row md:justify-between md:items-end mb-6 space-y-4 md:space-y-0"
+				>
+					<div>
+						{#if $page.url.pathname === '/'}
 							<h1 class="text-4xl font-bold text-gray-800">Dashboard</h1>
 							<p class="text-gray-500 mt-1">{todayDate}</p>
 							<p class="text-gray-600 font-semibold mt-2">
@@ -262,40 +236,10 @@
 							<p class="text-gray-600 font-semibold">
 								Kamu punya {kanbanLogic.stats.inProgressCount} tugas yang belum selesai
 							</p>
-						</div>
-						<div class="flex gap-4 items-center">
-							<span class="text-gray-600 font-semibold hidden md:block"
-								>Welcome, {data.profile?.username || data.session.user.email}!</span
-							>
-							<NotificationBell />
-							<button
-								onclick={subscribeToNotifications}
-								title="Aktifkan Notifikasi Push"
-								class="p-2 rounded-xl shadow-lg bg-yellow-500 text-white hover:bg-yellow-600"
-							>
-								<BellRing class="w-5 h-5" />
-							</button>
-							<button
-								onclick={sendTestNotification}
-								title="Kirim Notifikasi Tes"
-								class="p-2 rounded-xl shadow-lg bg-blue-500 text-white hover:bg-blue-600"
-							>
-								<Send class="w-5 h-5" />
-							</button>
-							<button
-								onclick={() => (isEditProfileModalOpen = true)}
-								class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
-								>Edit Profil</button
-							>
-							<button
-								onclick={handleLogout}
-								class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
-								>Logout</button
-							>
-						</div>
+						{/if}
 					</div>
-				{:else}
-					<div class="flex justify-end items-center gap-4 mb-6">
+
+					<div class="flex gap-2 sm:gap-4 items-center self-end md:self-center">
 						<span class="text-gray-600 font-semibold hidden md:block"
 							>Welcome, {data.profile?.username || data.session.user.email}!</span
 						>
@@ -315,30 +259,20 @@
 							<Send class="w-5 h-5" />
 						</button>
 						<button
-							onclick={() => (isEditProfileModalOpen = true)}
-							class="bg-gray-700 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-gray-800"
-							>Edit Profil</button
-						>
-						<button
 							onclick={handleLogout}
-							class="bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-red-700"
-							>Logout</button
+							title="Logout"
+							class="p-2 rounded-xl shadow-lg bg-red-600 text-white hover:bg-red-700"
 						>
+							<LogOut class="w-5 h-5" />
+						</button>
 					</div>
-				{/if}
+				</header>
+
 				<Toaster class="center-toaster w-64 text-wrap" position="center" />
 				<slot />
 			</div>
 		</main>
 
-		<!-- Modals -->
-		<EditProfileModal
-			isOpen={isEditProfileModalOpen}
-			session={data.session}
-			profile={data.profile}
-			on:close={() => (isEditProfileModalOpen = false)}
-			on:submit={handleProfileUpdate}
-		/>
 		<AddProjectModal
 			isOpen={isAddProjectModalOpen}
 			session={data.session}

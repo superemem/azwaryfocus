@@ -3,6 +3,9 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { supabaseClientStore } from '$lib/stores/supabaseStore';
 	import { get } from 'svelte/store';
+	// --- PERUBAHAN: Tambahkan invalidateAll untuk refresh data ---
+	import { invalidateAll } from '$app/navigation';
+	// --- PERUBAHAN: Tambahkan ikon Pensil ---
 	import {
 		Clock,
 		Download,
@@ -15,11 +18,44 @@
 		FolderPlus,
 		PieChart,
 		ListChecks,
-		Target
+		Target,
+		Pencil
 	} from '@lucide/svelte';
+	// --- PERUBAHAN: Import Modal Edit Profil ---
+	import EditProfileModal from '$lib/components/EditProfileModal.svelte';
 
 	let { data } = $props<PageData>();
 	const supabase = get(supabaseClientStore);
+
+	// --- PERUBAHAN: Logika untuk Edit Profile Modal ---
+	let isEditProfileModalOpen = $state(false);
+
+	async function handleProfileUpdate(event: CustomEvent) {
+		const { newUsername, avatarFile } = event.detail;
+		if (!data.session?.user) return;
+		let avatarUrl = data.profile?.avatar_url;
+		if (avatarFile) {
+			const userId = data.session.user.id;
+			const fileExt = avatarFile.name.split('.').pop();
+			const filePath = `${userId}/${Date.now()}.${fileExt}`;
+			const { error: uploadError } = await supabase.storage
+				.from('avatars')
+				.upload(filePath, avatarFile);
+			if (uploadError) return console.error('Upload avatar error:', uploadError);
+			const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+			avatarUrl = publicUrlData.publicUrl;
+		}
+		const { error } = await supabase
+			.from('profiles')
+			.update({ username: newUsername, avatar_url: avatarUrl })
+			.eq('id', data.session.user.id);
+		if (!error) {
+			isEditProfileModalOpen = false;
+			// Refresh semua data di halaman setelah update berhasil
+			invalidateAll();
+		}
+	}
+	// --- AKHIR PERUBAHAN ---
 
 	// State untuk UI Analitik
 	let timelineChartCanvas: HTMLCanvasElement;
@@ -70,7 +106,7 @@
 		return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
 	}
 
-	// --- Fungsi-fungsi Chart ---
+	// --- Fungsi-fungsi Chart --- (Tidak Ada Perubahan Disini)
 	async function initCharts() {
 		if (!isChartReady) {
 			await new Promise((resolve) => {
@@ -289,15 +325,14 @@
 </script>
 
 <div class="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
-	<!-- Header Profil -->
-	<div class="flex flex-col sm:flex-row items-center gap-6">
+	<div class="flex items-center gap-6">
 		<img
 			src={data.profile.avatar_url ||
 				`https://api.dicebear.com/8.x/initials/svg?seed=${data.profile.username}`}
 			alt="Avatar"
 			class="w-24 h-24 rounded-full border-4 border-purple-200 shadow-lg"
 		/>
-		<div>
+		<div class="flex-1">
 			<h1 class="text-3xl sm:text-4xl font-bold text-gray-800 text-center sm:text-left">
 				{data.profile.username || 'Pengguna'}
 			</h1>
@@ -305,9 +340,15 @@
 				{data.session.user.email || 'Email tidak tersedia'}
 			</p>
 		</div>
+		<button
+			onclick={() => (isEditProfileModalOpen = true)}
+			class="ml-auto flex items-center gap-2 bg-purple-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-purple-700 transition-colors"
+		>
+			<Pencil size={16} />
+			<span class="hidden sm:inline">Edit Profil</span>
+		</button>
 	</div>
 
-	<!-- Dashboard Produktivitas -->
 	<div class="bg-white p-6 rounded-2xl shadow-lg">
 		<div
 			class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-6 border-gray-200"
@@ -333,9 +374,7 @@
 			</div>
 		</div>
 
-		<!-- Grid Statistik -->
 		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-			<!-- Kolom Kiri: Statistik Tugas & Proyek -->
 			<div class="lg:col-span-1 space-y-6">
 				<div class="bg-gray-50 p-4 rounded-lg">
 					<h3 class="font-bold text-gray-700 mb-3">Tugas Bulan Ini</h3>
@@ -374,7 +413,6 @@
 				</div>
 			</div>
 
-			<!-- Kolom Kanan: Analitik Fokus -->
 			<div class="lg:col-span-2 bg-gray-50 p-4 rounded-lg">
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
 					<div class="bg-white p-3 rounded-lg flex items-center gap-3">
@@ -401,9 +439,7 @@
 					<canvas bind:this={timelineChartCanvas}></canvas>
 				</div>
 
-				<!-- UI Analitik Tugas & Proyek BARU -->
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t">
-					<!-- Donut Chart Proyek -->
 					<div>
 						<h4 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
 							<PieChart size={20} />Distribusi Proyek
@@ -424,7 +460,6 @@
 							{/if}
 						</div>
 					</div>
-					<!-- Daftar Top Tugas -->
 					<div>
 						<h4 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
 							<ListChecks size={20} />Tugas Paling Fokus
@@ -459,4 +494,12 @@
 			</div>
 		</div>
 	</div>
+
+	<EditProfileModal
+		isOpen={isEditProfileModalOpen}
+		session={data.session}
+		profile={data.profile}
+		on:close={() => (isEditProfileModalOpen = false)}
+		on:submit={handleProfileUpdate}
+	/>
 </div>
